@@ -1,3 +1,6 @@
+## generate key
+`keytool -genkeypair -alias qaq -keyalg RSA -keysize 2048 -storetype PKCS12 -keystore keystore.p12 -validity 3650`
+
 <p align="center">
   <img width="80px" src="https://raw.githubusercontent.com/SonicCloudOrg/sonic-server/main/logo.png">
 </p>

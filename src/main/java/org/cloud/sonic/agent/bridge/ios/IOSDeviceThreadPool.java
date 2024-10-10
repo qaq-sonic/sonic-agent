@@ -16,7 +16,8 @@ public class IOSDeviceThreadPool {
     public static ExecutorService cachedThreadPool;
 
     @Bean
-    public void iOSThreadPoolInit() {
+    public ExecutorService iOSThreadPoolInit() {
         cachedThreadPool = Executors.newCachedThreadPool();
+        return cachedThreadPool;
     }
 }

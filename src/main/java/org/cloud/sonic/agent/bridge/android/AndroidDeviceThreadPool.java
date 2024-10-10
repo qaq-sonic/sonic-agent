@@ -16,7 +16,8 @@ public class AndroidDeviceThreadPool {
     public static ExecutorService cachedThreadPool;
 
     @Bean
-    public void androidThreadPoolInit() {
+    public ExecutorService androidThreadPoolInit() {
         cachedThreadPool = Executors.newCachedThreadPool();
+        return cachedThreadPool;
     }
 }

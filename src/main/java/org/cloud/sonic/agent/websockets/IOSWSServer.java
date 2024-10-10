@@ -69,7 +69,7 @@ public class IOSWSServer implements IIOSWSServer {
     public static Map<String, Integer> screenMap = new HashMap<>();
     @Value("${sonic.agent.key}")
     private String key;
-    @Value("${sonic.agent.port}")
+    @Value("${server.port}")
     private int port;
     @Autowired
     private AgentManagerTool agentManagerTool;

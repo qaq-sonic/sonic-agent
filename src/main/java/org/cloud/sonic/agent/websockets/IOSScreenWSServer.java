@@ -48,7 +48,7 @@ import static org.cloud.sonic.agent.tools.BytesTool.sendByte;
 public class IOSScreenWSServer implements IIOSWSServer {
     @Value("${sonic.agent.key}")
     private String key;
-    @Value("${sonic.agent.port}")
+    @Value("${server.port}")
     private int port;
 
     @OnOpen

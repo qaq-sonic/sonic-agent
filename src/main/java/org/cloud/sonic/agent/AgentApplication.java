@@ -36,17 +36,17 @@ import org.springframework.context.annotation.Import;
 @EnableAspectJAutoProxy(proxyTargetClass = true)
 @SpringBootApplication
 public class AgentApplication {
-    @Value("${sonic.agent.port}")
-    private int port;
+//    @Value("${sonic.agent.port}")
+//    private int port;
 
     public static void main(String[] args) {
         SpringApplication.run(AgentApplication.class, args);
     }
 
-    @Bean
-    public TomcatServletWebServerFactory servletContainer() {
-        TomcatServletWebServerFactory factory = new TomcatServletWebServerFactory(port);
-        factory.addConnectorCustomizers((TomcatConnectorCustomizer) connector -> connector.setProperty("relaxedQueryChars", "|{}[]\\"));
-        return factory;
-    }
+//    @Bean
+//    public TomcatServletWebServerFactory servletContainer() {
+//        TomcatServletWebServerFactory factory = new TomcatServletWebServerFactory(port);
+//        factory.addConnectorCustomizers((TomcatConnectorCustomizer) connector -> connector.setProperty("relaxedQueryChars", "|{}[]\\"));
+//        return factory;
+//    }
 }

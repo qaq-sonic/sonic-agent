@@ -62,7 +62,7 @@ import java.util.concurrent.TimeUnit;
 public class TransportClient extends WebSocketClient {
     String host = String.valueOf(SpringTool.getPropertiesValue("sonic.agent.host"));
     String version = String.valueOf(SpringTool.getPropertiesValue("spring.version"));
-    Integer port = Integer.valueOf(SpringTool.getPropertiesValue("sonic.agent.port"));
+    Integer port = Integer.valueOf(SpringTool.getPropertiesValue("server.port"));
 
     public TransportClient(URI serverUri) {
         super(serverUri);

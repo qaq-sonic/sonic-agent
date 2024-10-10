@@ -65,7 +65,7 @@ import static org.cloud.sonic.agent.tools.BytesTool.sendText;
 public class AndroidWSServer implements IAndroidWSServer {
     @Value("${sonic.agent.key}")
     private String key;
-    @Value("${sonic.agent.port}")
+    @Value("${server.port}")
     private int port;
     @Autowired
     private AgentManagerTool agentManagerTool;
@@ -200,7 +200,7 @@ public class AndroidWSServer implements IAndroidWSServer {
                 BytesTool.sendText(session, proxy.toJSONString());
             }
             case "installCert" -> AndroidDeviceBridgeTool.executeCommand(iDevice,
-                    String.format("am start -a android.intent.action.VIEW -d http://%s:%d/assets/download", getHost(), port));
+                    String.format("am start -a android.intent.action.VIEW -d https://%s:%d/assets/download", getHost(), port));
             case "forwardView" -> {
                 JSONObject forwardView = new JSONObject();
                 forwardView.put("msg", "forwardView");
