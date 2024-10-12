@@ -21,6 +21,7 @@ import com.alibaba.fastjson.JSON;
 import com.alibaba.fastjson.JSONArray;
 import com.alibaba.fastjson.JSONException;
 import com.alibaba.fastjson.JSONObject;
+import jakarta.annotation.PostConstruct;
 import jakarta.websocket.Session;
 import org.cloud.sonic.agent.common.interfaces.DeviceStatus;
 import org.cloud.sonic.agent.common.interfaces.PlatformType;
@@ -83,7 +84,7 @@ public class SibTool implements ApplicationListener<ContextRefreshedEvent> {
     private RestTemplate restTemplateBean;
     private static Map<String, Integer> webViewMap = new HashMap<>();
 
-    @Bean
+    @PostConstruct
     public void setEnv() {
         bundleId = getBundleId;
         xcodeProjectPath = getXcodeProjectPath;

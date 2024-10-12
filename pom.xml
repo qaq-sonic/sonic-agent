@@ -6,7 +6,7 @@
 
     <groupId>org.cloud.sonic</groupId>
     <artifactId>sonic-agent</artifactId>
-    <version>SONIC_VERSION</version>
+    <version>2.7.1</version>
     <packaging>jar</packaging>
 
     <properties>
@@ -159,6 +159,10 @@
     <build>
         <finalName>${project.artifactId}-${platform}</finalName>
         <plugins>
+            <plugin>
+                <groupId>org.graalvm.buildtools</groupId>
+                <artifactId>native-maven-plugin</artifactId>
+            </plugin>
             <plugin>
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-maven-plugin</artifactId>
