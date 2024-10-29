@@ -1,0 +1,11 @@
+name: sonic-agent
+services:
+  sonic-agent:
+    image: blacklee123/sonic-agent
+    environment:
+      - AGENT_KEY=29002272-4659-4808-a804-08ce3388b136
+    network_mode: host
+    privileged: true
+    volumes:
+      - /dev/bus/usb:/dev/bus/usb
+      - /var/run/usbmuxd:/var/run/usbmuxd

@@ -1,10 +1,21 @@
 spring:
   version: @project.version@
-  application:
-    name: @project.artifactId@
-    des: "Agent of Sonic Cloud Real Machine Platform"
-  profiles:
-    active: @project.artifactId@
+
+server:
+  port: ${AGENT_PORT:8443}
+  ssl:
+    key-store: classpath:keystore.p12
+    key-store-password: qaqsonic
+    key-store-type: PKCS12
+    key-alias: qaq
+
+# The following will be migrated to the server configuration in the future | 以下未来会迁移到server配置
+modules:
+  ios:
+    # Replace with the bundleId of wda. If there is no. xcrunner suffix, it will be automatically completed. | 替换为wda的bundleId，如果没有.xctrunner后缀会自动补全
+    wda-bundle-id: ${WDA_BUNDLE_ID:com.sonic.WebDriverAgentRunner}
+    # (mac only) Replace with the xcode project path of wda. | 替换为wda的xcode project目录
+    wda-xcode-project-path: WebdriverAgent/WebDriverAgent.xcodeproj
 
 sonic:
   saa: 2.0.8

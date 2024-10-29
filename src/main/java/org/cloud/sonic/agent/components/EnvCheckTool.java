@@ -93,19 +93,12 @@ public class EnvCheckTool {
     public void checkConfigFiles() {
         String type = "Check config folders";
         printChecking(type);
-        File config = new File("config/application-sonic-agent.yml");
         if (system.contains("linux") || system.contains("mac")) {
             try {
                 Runtime.getRuntime().exec(new String[]{"sh", "-c", String.format("chmod -R 777 %s", new File("").getAbsolutePath())});
             } catch (IOException e) {
                 e.printStackTrace();
             }
-        }
-        if (config.exists()) {
-            printPass(type);
-        } else {
-            printFail(type);
-            throw new RuntimeException("Missing file! Please ensure that `config` (containing application-sonic-agent.yml) folders in the current directory");
         }
     }
 
