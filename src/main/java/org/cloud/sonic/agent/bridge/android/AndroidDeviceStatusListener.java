@@ -1,32 +1,14 @@
-/*
- *   sonic-agent  Agent of Sonic Cloud Real Machine Platform.
- *   Copyright (C) 2022 SonicCloudOrg
- *
- *   This program is free software: you can redistribute it and/or modify
- *   it under the terms of the GNU Affero General Public License as published
- *   by the Free Software Foundation, either version 3 of the License, or
- *   (at your option) any later version.
- *
- *   This program is distributed in the hope that it will be useful,
- *   but WITHOUT ANY WARRANTY; without even the implied warranty of
- *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- *   GNU Affero General Public License for more details.
- *
- *   You should have received a copy of the GNU Affero General Public License
- *   along with this program.  If not, see <https://www.gnu.org/licenses/>.
- */
 package org.cloud.sonic.agent.bridge.android;
 
 import com.alibaba.fastjson.JSONObject;
 import com.android.ddmlib.AndroidDebugBridge;
 import com.android.ddmlib.IDevice;
+import lombok.extern.slf4j.Slf4j;
 import org.cloud.sonic.agent.common.interfaces.IsHMStatus;
 import org.cloud.sonic.agent.common.interfaces.PlatformType;
 import org.cloud.sonic.agent.common.maps.AndroidDeviceManagerMap;
 import org.cloud.sonic.agent.common.maps.DevicesBatteryMap;
 import org.cloud.sonic.agent.transport.TransportWorker;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
 /**
@@ -34,9 +16,9 @@ import org.springframework.stereotype.Component;
  * @des adb上下线监听，发送对应给server
  * @date 2021/08/16 19:26
  */
+@Slf4j
 @Component
 public class AndroidDeviceStatusListener implements AndroidDebugBridge.IDeviceChangeListener {
-    private final Logger logger = LoggerFactory.getLogger(AndroidDeviceStatusListener.class);
 
     /**
      * @param device
@@ -69,7 +51,7 @@ public class AndroidDeviceStatusListener implements AndroidDebugBridge.IDeviceCh
 
     @Override
     public void deviceConnected(IDevice device) {
-        logger.info("Android device: " + device.getSerialNumber() + " ONLINE！");
+        log.info("Android device: {} ONLINE！", device.getSerialNumber());
         AndroidDeviceManagerMap.getStatusMap().remove(device.getSerialNumber());
         DevicesBatteryMap.getTempMap().remove(device.getSerialNumber());
         send(device);
@@ -77,7 +59,7 @@ public class AndroidDeviceStatusListener implements AndroidDebugBridge.IDeviceCh
 
     @Override
     public void deviceDisconnected(IDevice device) {
-        logger.info("Android device: " + device.getSerialNumber() + " OFFLINE！");
+        log.info("Android device: {} OFFLINE！", device.getSerialNumber());
         AndroidDeviceManagerMap.getStatusMap().remove(device.getSerialNumber());
         DevicesBatteryMap.getTempMap().remove(device.getSerialNumber());
         send(device);
