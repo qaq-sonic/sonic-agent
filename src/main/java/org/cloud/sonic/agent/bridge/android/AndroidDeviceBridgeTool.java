@@ -32,7 +32,7 @@ import org.cloud.sonic.agent.tools.PortTool;
 import org.cloud.sonic.agent.tools.ScheduleTool;
 import org.cloud.sonic.agent.tools.file.DownloadTool;
 import org.cloud.sonic.agent.tools.file.FileTool;
-import org.cloud.sonic.agent.tools.file.UploadTools;
+import org.cloud.sonic.agent.components.UploadTools;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.ApplicationListener;

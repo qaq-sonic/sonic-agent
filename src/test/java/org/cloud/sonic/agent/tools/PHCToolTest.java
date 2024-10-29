@@ -1,5 +1,6 @@
 package org.cloud.sonic.agent.tools;
 
+import org.cloud.sonic.agent.components.PHCTool;
 import org.junit.Ignore;
 import org.junit.Test;
 import org.junit.runner.RunWith;

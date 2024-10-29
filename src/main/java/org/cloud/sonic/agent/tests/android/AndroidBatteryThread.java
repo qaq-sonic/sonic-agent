@@ -48,7 +48,7 @@ public class AndroidBatteryThread implements Runnable {
     @Override
     public void run() {
         Thread.currentThread().setName(THREAD_NAME);
-        if (TransportWorker.client == null) {
+        if (TransportWorker.getClient() == null) {
             return;
         }
 

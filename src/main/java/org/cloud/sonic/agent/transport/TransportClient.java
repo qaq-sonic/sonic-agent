@@ -33,6 +33,9 @@ import org.cloud.sonic.agent.common.enums.AndroidKey;
 import org.cloud.sonic.agent.common.interfaces.DeviceStatus;
 import org.cloud.sonic.agent.common.interfaces.PlatformType;
 import org.cloud.sonic.agent.common.maps.*;
+import org.cloud.sonic.agent.components.AgentManagerTool;
+import org.cloud.sonic.agent.components.PHCTool;
+import org.cloud.sonic.agent.components.SpringTool;
 import org.cloud.sonic.agent.tests.AndroidTests;
 import org.cloud.sonic.agent.tests.IOSTests;
 import org.cloud.sonic.agent.tests.SuiteListener;
@@ -60,12 +63,15 @@ import java.util.concurrent.TimeUnit;
 
 @Slf4j
 public class TransportClient extends WebSocketClient {
-    String host = String.valueOf(SpringTool.getPropertiesValue("sonic.agent.host"));
-    String version = String.valueOf(SpringTool.getPropertiesValue("spring.version"));
-    Integer port = Integer.valueOf(SpringTool.getPropertiesValue("server.port"));
+    private final String host;
+    private final String version;
+    private final Integer port;
 
-    public TransportClient(URI serverUri) {
+    public TransportClient(URI serverUri, String host, String version, Integer port) {
         super(serverUri);
+        this.host = host;
+        this.version = version;
+        this.port = port;
     }
 
     @Override
@@ -80,7 +86,7 @@ public class TransportClient extends WebSocketClient {
             return;
         }
         log.info("Agent <- Server message: {}", jsonObject);
-        TransportWorker.cachedThreadPool.execute(() -> {
+        TransportWorker.getVirtualThreadPool().execute(() -> {
             switch (jsonObject.getString("msg")) {
                 case "occupy" -> {
                     String udId = jsonObject.getString("udId");
@@ -237,44 +243,44 @@ public class TransportClient extends WebSocketClient {
                     }
                 }
                 case "auth" -> {
-                    if (jsonObject.getString("result").equals("pass")) {
-                        log.info("server auth successful!");
-                        BytesTool.agentId = jsonObject.getInteger("id");
-                        BytesTool.highTemp = jsonObject.getInteger("highTemp");
-                        BytesTool.highTempTime = jsonObject.getInteger("highTempTime");
-                        BytesTool.remoteTimeout = jsonObject.getInteger("remoteTimeout");
-                        BytesTool.agentHost = host;
-                        TransportWorker.client = this;
-                        JSONObject agentInfo = new JSONObject();
-                        agentInfo.put("msg", "agentInfo");
-                        agentInfo.put("agentId", BytesTool.agentId);
-                        agentInfo.put("port", port);
-                        agentInfo.put("version", "v" + version);
-                        agentInfo.put("systemType", System.getProperty("os.name"));
-                        agentInfo.put("host", host);
-                        agentInfo.put("hasHub", PHCTool.isSupport() ? 1 : 0);
-                        TransportWorker.client.send(agentInfo.toJSONString());
-                        IDevice[] iDevices = AndroidDeviceBridgeTool.getRealOnLineDevices();
-                        for (IDevice d : iDevices) {
-                            String status = AndroidDeviceManagerMap.getStatusMap().get(d.getSerialNumber());
-                            if (status != null) {
-                                AndroidDeviceLocalStatus.send(d.getSerialNumber(), status);
-                            } else {
-                                AndroidDeviceLocalStatus.send(d.getSerialNumber(), d.getState() == null ? null : d.getState().toString());
-                            }
-                        }
-                        List<String> udIds = SibTool.getDeviceList();
-                        for (String u : udIds) {
-                            String status = IOSDeviceManagerMap.getMap().get(u);
-                            if (status != null) {
-                                IOSDeviceLocalStatus.send(u, status);
-                            } else {
-                                IOSDeviceLocalStatus.send(u, DeviceStatus.ONLINE);
-                            }
-                        }
-                    } else {
-                        TransportWorker.isKeyAuth = false;
+                    if (!jsonObject.getString("result").equals("pass")) {
+                        TransportWorker.setIsKeyAuth(false);
                         log.info("server auth failed!");
+                        return;
+                    }
+                    log.info("server auth successful!");
+                    BytesTool.agentId = jsonObject.getInteger("id");
+                    BytesTool.highTemp = jsonObject.getInteger("highTemp");
+                    BytesTool.highTempTime = jsonObject.getInteger("highTempTime");
+                    BytesTool.remoteTimeout = jsonObject.getInteger("remoteTimeout");
+                    BytesTool.agentHost = host;
+                    TransportWorker.setClient(this);
+                    JSONObject agentInfo = new JSONObject();
+                    agentInfo.put("msg", "agentInfo");
+                    agentInfo.put("agentId", BytesTool.agentId);
+                    agentInfo.put("port", port);
+                    agentInfo.put("version", "v" + version);
+                    agentInfo.put("systemType", System.getProperty("os.name"));
+                    agentInfo.put("host", host);
+                    agentInfo.put("hasHub", PHCTool.isSupport() ? 1 : 0);
+                    TransportWorker.getClient().send(agentInfo.toJSONString());
+                    IDevice[] iDevices = AndroidDeviceBridgeTool.getRealOnLineDevices();
+                    for (IDevice d : iDevices) {
+                        String status = AndroidDeviceManagerMap.getStatusMap().get(d.getSerialNumber());
+                        if (status != null) {
+                            AndroidDeviceLocalStatus.send(d.getSerialNumber(), status);
+                        } else {
+                            AndroidDeviceLocalStatus.send(d.getSerialNumber(), d.getState() == null ? null : d.getState().toString());
+                        }
+                    }
+                    List<String> udIds = SibTool.getDeviceList();
+                    for (String u : udIds) {
+                        String status = IOSDeviceManagerMap.getMap().get(u);
+                        if (status != null) {
+                            IOSDeviceLocalStatus.send(u, status);
+                        } else {
+                            IOSDeviceLocalStatus.send(u, DeviceStatus.ONLINE);
+                        }
                     }
                 }
                 case "shutdown" -> AgentManagerTool.stop();
@@ -361,11 +367,11 @@ public class TransportClient extends WebSocketClient {
 
     @Override
     public void onClose(int i, String s, boolean b) {
-        if (TransportWorker.isKeyAuth) {
+        if (TransportWorker.getIsKeyAuth()) {
             log.info("Server disconnected. Retry in 10s...");
         }
-        if (TransportWorker.client == this) {
-            TransportWorker.client = null;
+        if (TransportWorker.getClient() == this) {
+            TransportWorker.setClient(null);
         }
     }
 

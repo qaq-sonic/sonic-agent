@@ -22,7 +22,7 @@ import org.cloud.sonic.agent.common.interfaces.PlatformType;
 import org.cloud.sonic.agent.common.models.HandleContext;
 import org.cloud.sonic.agent.tests.RunStepThread;
 import org.cloud.sonic.agent.tests.handlers.StepHandlers;
-import org.cloud.sonic.agent.tools.SpringTool;
+import org.cloud.sonic.agent.components.SpringTool;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 

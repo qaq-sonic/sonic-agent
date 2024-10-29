@@ -40,12 +40,14 @@ import org.cloud.sonic.agent.tests.TaskManager;
 import org.cloud.sonic.agent.tests.android.AndroidRunStepThread;
 import org.cloud.sonic.agent.tests.handlers.AndroidStepHandler;
 import org.cloud.sonic.agent.tests.handlers.AndroidTouchHandler;
-import org.cloud.sonic.agent.tools.*;
+import org.cloud.sonic.agent.tools.BytesTool;
+import org.cloud.sonic.agent.tools.PortTool;
+import org.cloud.sonic.agent.components.SGMTool;
+import org.cloud.sonic.agent.tools.ScheduleTool;
 import org.cloud.sonic.agent.tools.file.DownloadTool;
-import org.cloud.sonic.agent.tools.file.UploadTools;
+import org.cloud.sonic.agent.components.UploadTools;
 import org.cloud.sonic.agent.transport.TransportWorker;
 import org.cloud.sonic.driver.common.tool.SonicRespException;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
@@ -67,13 +69,13 @@ public class AndroidWSServer implements IAndroidWSServer {
     private String key;
     @Value("${server.port}")
     private int port;
-    @Autowired
-    private AgentManagerTool agentManagerTool;
 
     @OnOpen
-    public void onOpen(Session session, @PathParam("key") String secretKey,
-                       @PathParam("udId") String udId, @PathParam("token") String token) throws Exception {
-        if (secretKey.length() == 0 || (!secretKey.equals(key)) || token.length() == 0) {
+    public void onOpen(Session session,
+                       @PathParam("key") String secretKey,
+                       @PathParam("udId") String udId,
+                       @PathParam("token") String token) throws Exception {
+        if (secretKey.isEmpty() || (!secretKey.equals(key)) || token.isEmpty()) {
             log.info("Auth Failed!");
             return;
         }

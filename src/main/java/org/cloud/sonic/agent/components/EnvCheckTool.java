@@ -15,8 +15,10 @@
  *   You should have received a copy of the GNU Affero General Public License
  *   along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
-package org.cloud.sonic.agent.tools;
+package org.cloud.sonic.agent.components;
 
+import org.cloud.sonic.agent.tools.BytesTool;
+import org.cloud.sonic.agent.tools.ProcessCommandTool;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.ConfigurableApplicationContext;
 import org.springframework.context.annotation.Bean;

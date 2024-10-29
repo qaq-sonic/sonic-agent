@@ -18,6 +18,8 @@
 package org.cloud.sonic.agent.transport;
 
 import com.alibaba.fastjson.JSONObject;
+import lombok.Getter;
+import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
 import org.cloud.sonic.agent.tools.BytesTool;
 import org.springframework.context.annotation.Configuration;
@@ -29,17 +31,23 @@ import java.util.concurrent.LinkedBlockingQueue;
 @Configuration
 @Slf4j
 public class TransportWorker {
-    private static LinkedBlockingQueue<JSONObject> dataQueue = new LinkedBlockingQueue<>();
-    public static ExecutorService cachedThreadPool = Executors.newCachedThreadPool();
-    public static TransportClient client = null;
-    public static Boolean isKeyAuth = true;
+    private static final LinkedBlockingQueue<JSONObject> dataQueue = new LinkedBlockingQueue<>();
+    @Getter
+    private static final ExecutorService virtualThreadPool = Executors.newVirtualThreadPerTaskExecutor();
+
+    @Setter
+    @Getter
+    private static TransportClient client;
+    @Setter
+    @Getter
+    private static Boolean isKeyAuth = true;
 
     public static void send(JSONObject jsonObject) {
         dataQueue.offer(jsonObject);
     }
 
     public static void readQueue() {
-        cachedThreadPool.execute(() -> {
+        virtualThreadPool.execute(() -> {
             while (isKeyAuth) {
                 try {
                     if (client != null && client.isOpen()) {

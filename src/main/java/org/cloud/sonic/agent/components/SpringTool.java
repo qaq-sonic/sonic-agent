@@ -1,4 +1,4 @@
-package org.cloud.sonic.agent.tools;
+package org.cloud.sonic.agent.components;
 
 import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;

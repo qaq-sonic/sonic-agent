@@ -56,9 +56,11 @@ public class AndroidScreenWSServer implements IAndroidWSServer {
     private AndroidMonitorHandler androidMonitorHandler = new AndroidMonitorHandler();
 
     @OnOpen
-    public void onOpen(Session session, @PathParam("key") String secretKey,
-                       @PathParam("udId") String udId, @PathParam("token") String token) throws Exception {
-        if (secretKey.length() == 0 || (!secretKey.equals(key)) || token.length() == 0) {
+    public void onOpen(Session session,
+                       @PathParam("key") String secretKey,
+                       @PathParam("udId") String udId,
+                       @PathParam("token") String token) throws Exception {
+        if (secretKey.isEmpty() || (!secretKey.equals(key)) || token.isEmpty()) {
             log.info("Auth Failed!");
             return;
         }
