@@ -14,6 +14,10 @@ public class NetworkInfo {
 
             var networkInterfaces = NetworkInterface.networkInterfaces().toList();
             for (var networkInterface : networkInterfaces) {
+                // 排除docker0接口
+                if (networkInterface.getName().equals("docker0")) {
+                    continue;
+                }
                 // 遍历每个网卡接口下的 IP 地址
                 var inetAddresses = networkInterface.inetAddresses().toList();
                 for (var inetAddress : inetAddresses) {

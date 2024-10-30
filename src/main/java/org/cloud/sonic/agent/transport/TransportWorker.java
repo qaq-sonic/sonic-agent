@@ -22,49 +22,21 @@ import lombok.Getter;
 import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
 import org.cloud.sonic.agent.tools.BytesTool;
-import org.springframework.context.annotation.Configuration;
 
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.LinkedBlockingQueue;
-
-@Configuration
 @Slf4j
 public class TransportWorker {
-    private static final LinkedBlockingQueue<JSONObject> dataQueue = new LinkedBlockingQueue<>();
-    @Getter
-    private static final ExecutorService virtualThreadPool = Executors.newVirtualThreadPerTaskExecutor();
-
     @Setter
     @Getter
     private static TransportClient client;
+
     @Setter
     @Getter
     private static Boolean isKeyAuth = true;
 
     public static void send(JSONObject jsonObject) {
-        dataQueue.offer(jsonObject);
-    }
-
-    public static void readQueue() {
-        virtualThreadPool.execute(() -> {
-            while (isKeyAuth) {
-                try {
-                    if (client != null && client.isOpen()) {
-                        if (!dataQueue.isEmpty()) {
-                            JSONObject m = dataQueue.poll();
-                            m.put("agentId", BytesTool.agentId);
-                            client.send(m.toJSONString());
-                        } else {
-                            Thread.sleep(1000);
-                        }
-                    } else {
-                        Thread.sleep(5000);
-                    }
-                } catch (Exception e) {
-                    e.printStackTrace();
-                }
-            }
-        });
+        if (client != null) {
+            jsonObject.put("agentId", BytesTool.agentId);
+            client.send(jsonObject.toJSONString());
+        }
     }
 }

@@ -42,7 +42,6 @@ public class AgentApplication {
                 TransportConnectionThread.DELAY,
                 TransportConnectionThread.TIME_UNIT
         );
-        TransportWorker.readQueue();
         Thread.startVirtualThread(() -> {
             File file = new File("plugins/sonic-go-mitmproxy-ca-cert.pem");
             if (!file.exists()) {
