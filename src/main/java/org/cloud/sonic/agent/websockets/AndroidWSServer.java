@@ -106,17 +106,6 @@ public class AndroidWSServer implements IAndroidWSServer {
         jsonDebug.put("udId", udId);
         TransportWorker.send(jsonDebug);
 
-        session.getUserProperties().put("schedule", ScheduleTool.schedule(() -> {
-            log.info("time up!");
-            if (session.isOpen()) {
-                JSONObject errMsg = new JSONObject();
-                errMsg.put("msg", "error");
-                BytesTool.sendText(session, errMsg.toJSONString());
-                exit(session);
-                AndroidDeviceBridgeTool.pressKey(iDevice, AndroidKey.HOME);
-            }
-        }, BytesTool.remoteTimeout));
-
         saveUdIdMapAndSet(session, iDevice);
 
         AndroidAPKMap.getMap().put(udId, false);
@@ -437,8 +426,6 @@ public class AndroidWSServer implements IAndroidWSServer {
 
     private void exit(Session session) {
         synchronized (session) {
-            ScheduledFuture<?> future = (ScheduledFuture<?>) session.getUserProperties().get("schedule");
-            future.cancel(true);
             AndroidDeviceLocalStatus.finish(session.getUserProperties().get("udId") + "");
             IDevice iDevice = udIdMap.get(session);
             try {

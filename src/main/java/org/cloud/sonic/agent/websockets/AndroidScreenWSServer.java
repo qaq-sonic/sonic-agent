@@ -17,14 +17,12 @@ import org.cloud.sonic.agent.tests.android.minicap.MiniCapUtil;
 import org.cloud.sonic.agent.tests.android.scrcpy.ScrcpyServerUtil;
 import org.cloud.sonic.agent.tests.handlers.AndroidMonitorHandler;
 import org.cloud.sonic.agent.tools.BytesTool;
-import org.cloud.sonic.agent.tools.ScheduleTool;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 import java.io.IOException;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.atomic.AtomicReference;
 
 @Component
@@ -36,7 +34,7 @@ public class AndroidScreenWSServer implements IAndroidWSServer {
     private Map<String, String> typeMap = new ConcurrentHashMap<>();
     private Map<String, String> picMap = new ConcurrentHashMap<>();
 
-    private AndroidMonitorHandler androidMonitorHandler = new AndroidMonitorHandler();
+    private final AndroidMonitorHandler androidMonitorHandler = new AndroidMonitorHandler();
 
     @OnOpen
     public void onOpen(Session session,
@@ -73,17 +71,6 @@ public class AndroidScreenWSServer implements IAndroidWSServer {
             log.info("Waiting for apk install timeout!");
             exit(session);
         }
-
-        session.getUserProperties().put("schedule",ScheduleTool.schedule(() -> {
-            log.info("time up!");
-            if (session.isOpen()) {
-                JSONObject errMsg = new JSONObject();
-                errMsg.put("msg", "error");
-                BytesTool.sendText(session, errMsg.toJSONString());
-                exit(session);
-            }
-        }, BytesTool.remoteTimeout));
-
     }
 
     @OnClose
@@ -102,9 +89,10 @@ public class AndroidScreenWSServer implements IAndroidWSServer {
     @OnMessage
     public void onMessage(String message, Session session) {
         JSONObject msg = JSON.parseObject(message);
-        log.info("{} send: {}", session.getUserProperties().get("id").toString(), msg);
         String udId = session.getUserProperties().get("udId").toString();
-        switch (msg.getString("type")) {
+        log.info("{} send: {}", udId, msg);
+        var msgType = msg.getString("type");
+        switch (msgType) {
             case "switch" -> {
                 typeMap.put(udId, msg.getString("detail"));
                 IDevice iDevice = udIdMap.get(session);
@@ -168,8 +156,6 @@ public class AndroidScreenWSServer implements IAndroidWSServer {
 
     private void exit(Session session) {
         synchronized (session) {
-            ScheduledFuture<?> future = (ScheduledFuture<?>) session.getUserProperties().get("schedule");
-            future.cancel(true);
             String udId = session.getUserProperties().get("udId").toString();
             androidMonitorHandler.stopMonitor(udIdMap.get(session));
             WebSocketSessionMap.removeSession(session);

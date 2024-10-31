@@ -22,8 +22,6 @@ import java.io.*;
 import java.net.Socket;
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
-import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 
@@ -33,14 +31,15 @@ import java.util.concurrent.TimeUnit;
 public class AndroidTerminalWSServer implements IAndroidWSServer {
 
     private static final String[] blackCommandList = {"reboot", "rm", "su "};
+    private static final String TERMINAL_FUTURE = "TERMINAL_FUTURE";
+    private static final String LOGCAT_FUTURE = "LOGCAT_FUTURE";
+    private static final String SOCKET_THREAD = "SOCKET";
+    private static final String OUTPUT_STREAM = "OUTPUT_STREAM";
+    private static final String DEVICE = "DEVICE";
+    private static final String UDID = "UDID";
 
     @Value("${sonic.agent.key}")
     private String key;
-    private static final Map<Session, Future<?>> terminalMap = new ConcurrentHashMap<>();
-    private static final Map<Session, Future<?>> logcatMap = new ConcurrentHashMap<>();
-    private static final Map<Session, Thread> socketMap = new ConcurrentHashMap<>();
-    private static final Map<Session, OutputStream> outputStreamMap = new ConcurrentHashMap<>();
-    private static final Map<Session, IDevice> deviceMap = new ConcurrentHashMap<>();
 
     @OnOpen
     public void onOpen(Session session,
@@ -54,8 +53,8 @@ public class AndroidTerminalWSServer implements IAndroidWSServer {
 
         IDevice iDevice = AndroidDeviceBridgeTool.getIDeviceByUdId(udId);
 
-        session.getUserProperties().put("udId", udId);
-        deviceMap.put(session, iDevice);
+        session.getUserProperties().put(UDID, udId);
+        session.getUserProperties().put(DEVICE, iDevice);
 
         String username = iDevice.getProperty("ro.product.device");
         Thread.startVirtualThread(() -> {
@@ -92,7 +91,7 @@ public class AndroidTerminalWSServer implements IAndroidWSServer {
     @OnMessage
     public void onMessage(String message, Session session) {
         JSONObject jsonObject = JSON.parseObject(message);
-        log.info("{} send: {}", session.getUserProperties().get("udId").toString(), jsonObject);
+        log.info("{} send: {}", session.getUserProperties().get(UDID).toString(), jsonObject);
         var msgType = AndroidTerminalMsgType.valueOf(jsonObject.getString("type"));
         handleIncomingMessage(msgType, session, jsonObject);
     }
@@ -122,8 +121,8 @@ public class AndroidTerminalWSServer implements IAndroidWSServer {
     }
 
     private void handleAppList(Session session, JSONObject jsonObject) {
-        var iDevice = deviceMap.get(session);
-        var outPutStream = outputStreamMap.get(session);
+        var iDevice = (IDevice) session.getUserProperties().get(DEVICE);
+        var outPutStream = (OutputStream) session.getUserProperties().get(OUTPUT_STREAM);
         startService(iDevice, session);
         if (outPutStream != null) {
             try {
@@ -136,8 +135,8 @@ public class AndroidTerminalWSServer implements IAndroidWSServer {
     }
 
     private void handleWifiList(Session session, JSONObject jsonObject) {
-        var iDevice = deviceMap.get(session);
-        var outPutStream = outputStreamMap.get(session);
+        var iDevice = (IDevice) session.getUserProperties().get(DEVICE);
+        var outPutStream = (OutputStream) session.getUserProperties().get(OUTPUT_STREAM);
         startService(iDevice, session);
         if (outPutStream != null) {
             try {
@@ -150,7 +149,7 @@ public class AndroidTerminalWSServer implements IAndroidWSServer {
     }
 
     private void handleStopCmd(Session session, JSONObject jsonObject) {
-        Future<?> ter = terminalMap.get(session);
+        var ter = (Future<?>) session.getUserProperties().get(TERMINAL_FUTURE);
         if (!ter.isDone() || !ter.isCancelled()) {
             try {
                 ter.cancel(true);
@@ -168,7 +167,7 @@ public class AndroidTerminalWSServer implements IAndroidWSServer {
             BytesTool.sendText(session, done.toJSONString());
             return;
         }
-        var iDevice = deviceMap.get(session);
+        var iDevice = (IDevice) session.getUserProperties().get(DEVICE);
         var ter = AndroidDeviceThreadPool.cachedThreadPool.submit(() -> {
             try {
                 iDevice.executeShellCommand(command, new IShellOutputReceiver() {
@@ -197,11 +196,11 @@ public class AndroidTerminalWSServer implements IAndroidWSServer {
             done.put("msg", "terDone");
             BytesTool.sendText(session, done.toJSONString());
         });
-        terminalMap.put(session, ter);
+        session.getUserProperties().put(TERMINAL_FUTURE, ter);
     }
 
     private void handleStopLogcat(Session session, JSONObject jsonObject) {
-        Future<?> logcat = logcatMap.get(session);
+        var logcat = (Future<?>) session.getUserProperties().get(LOGCAT_FUTURE);
         if (logcat != null && !logcat.isDone() && !logcat.isCancelled()) {
             try {
                 logcat.cancel(true);
@@ -212,7 +211,7 @@ public class AndroidTerminalWSServer implements IAndroidWSServer {
     }
 
     private void handleLogcat(Session session, JSONObject jsonObject) {
-        Future<?> logcat = logcatMap.get(session);
+        var logcat = (Future<?>) session.getUserProperties().get(LOGCAT_FUTURE);
         if (logcat != null && !logcat.isDone() && !logcat.isCancelled()) {
             try {
                 logcat.cancel(true);
@@ -220,7 +219,7 @@ public class AndroidTerminalWSServer implements IAndroidWSServer {
                 log.error(e.getMessage());
             }
         }
-        var iDevice = deviceMap.get(session);
+        var iDevice = (IDevice) session.getUserProperties().get(DEVICE);
         var command = "logcat *:" + jsonObject.getString("level") + (jsonObject.getString("filter").isEmpty() ? "" : " | grep " + jsonObject.getString("filter"));
         logcat = AndroidDeviceThreadPool.cachedThreadPool.submit(() -> {
             try {
@@ -247,41 +246,31 @@ public class AndroidTerminalWSServer implements IAndroidWSServer {
                 return;
             }
         });
-        logcatMap.put(session, logcat);
+        session.getUserProperties().put(LOGCAT_FUTURE, logcat);
     }
 
     private void exit(Session session) {
-        Future<?> ter = terminalMap.get(session);
+        var ter = (Future<?>) session.getUserProperties().get(TERMINAL_FUTURE);
         if (ter != null && !ter.isDone() && !ter.isCancelled()) {
-            try {
-                ter.cancel(true);
-            } catch (Exception e) {
-                log.error(e.getMessage());
-            }
+            ter.cancel(true);
         }
         stopService(session);
-        terminalMap.remove(session);
 
-        Future<?> logcat = logcatMap.get(session);
+        var logcat = (Future<?>) session.getUserProperties().get(LOGCAT_FUTURE);
         if (logcat != null && !logcat.isDone() && !logcat.isCancelled()) {
-            try {
-                logcat.cancel(true);
-            } catch (Exception e) {
-                log.error(e.getMessage());
-            }
+            logcat.cancel(true);
         }
-        logcatMap.remove(session);
-        deviceMap.remove(session);
         try {
             session.close();
         } catch (IOException e) {
             log.error("IOException", e);
         }
-        log.info("{} : quit.", session.getUserProperties().get("udId").toString());
+        log.info("{} : quit.", session.getUserProperties().get(UDID).toString());
     }
 
     public void startService(IDevice iDevice, Session session) {
-        if (socketMap.get(session) != null && socketMap.get(session).isAlive()) {
+        var socketThread = (Thread) session.getUserProperties().get(SOCKET_THREAD);
+        if (socketThread != null && socketThread.isAlive()) {
             return;
         }
         try {
@@ -289,10 +278,10 @@ public class AndroidTerminalWSServer implements IAndroidWSServer {
         } catch (InterruptedException e) {
             log.error("InterruptedException", e);
         }
-        Thread manager = new Thread(() -> manageConnection(iDevice, session));
-        manager.start();
+        socketThread = new Thread(() -> manageConnection(iDevice, session));
+        socketThread.start();
         int w = 0;
-        while (outputStreamMap.get(session) == null) {
+        while (session.getUserProperties().get(OUTPUT_STREAM) == null) {
             if (w > 10) {
                 break;
             }
@@ -303,7 +292,7 @@ public class AndroidTerminalWSServer implements IAndroidWSServer {
             }
             w++;
         }
-        socketMap.put(session, manager);
+        session.getUserProperties().put(SOCKET_THREAD, socketThread);
     }
 
     private void manageConnection(IDevice iDevice, Session session) {
@@ -314,7 +303,7 @@ public class AndroidTerminalWSServer implements IAndroidWSServer {
              InputStream inputStream = managerSocket.getInputStream();
              OutputStream outputStream = managerSocket.getOutputStream();
              BufferedReader br = new BufferedReader(new InputStreamReader(inputStream))) {
-            outputStreamMap.put(session, outputStream);
+            session.getUserProperties().put(OUTPUT_STREAM, outputStream);
             String s;
             while (managerSocket.isConnected() && !Thread.interrupted()) {
                 try {
@@ -333,13 +322,12 @@ public class AndroidTerminalWSServer implements IAndroidWSServer {
             log.error("IO error", e);
         } finally {
             AndroidDeviceBridgeTool.removeForward(iDevice, managerPort, 2334);
-            outputStreamMap.remove(session);
             log.info("manager done.");
         }
     }
 
     private void stopService(Session session) {
-        var outputStream = outputStreamMap.get(session);
+        var outputStream = (OutputStream) session.getUserProperties().get(OUTPUT_STREAM);
         if (outputStream != null) {
             try {
                 outputStream.write("org.cloud.sonic.android.STOP".getBytes(StandardCharsets.UTF_8));
@@ -348,11 +336,11 @@ public class AndroidTerminalWSServer implements IAndroidWSServer {
                 log.error("stopService", e);
             }
         }
-        var manager = socketMap.get(session);
-        if (manager != null) {
-            manager.interrupt();
+        var socketThread = (Thread) session.getUserProperties().get(SOCKET_THREAD);
+        if (socketThread != null) {
+            socketThread.interrupt();
             int wait = 0;
-            while (!manager.isInterrupted()) {
+            while (!socketThread.isInterrupted()) {
                 try {
                     Thread.sleep(1000);
                 } catch (InterruptedException e) {
@@ -364,6 +352,5 @@ public class AndroidTerminalWSServer implements IAndroidWSServer {
                 }
             }
         }
-        socketMap.remove(session);
     }
 }
