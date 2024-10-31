@@ -1,20 +1,3 @@
-/*
- *   sonic-agent  Agent of Sonic Cloud Real Machine Platform.
- *   Copyright (C) 2022 SonicCloudOrg
- *
- *   This program is free software: you can redistribute it and/or modify
- *   it under the terms of the GNU Affero General Public License as published
- *   by the Free Software Foundation, either version 3 of the License, or
- *   (at your option) any later version.
- *
- *   This program is distributed in the hope that it will be useful,
- *   but WITHOUT ANY WARRANTY; without even the implied warranty of
- *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- *   GNU Affero General Public License for more details.
- *
- *   You should have received a copy of the GNU Affero General Public License
- *   along with this program.  If not, see <https://www.gnu.org/licenses/>.
- */
 package org.cloud.sonic.agent.websockets;
 
 import com.alibaba.fastjson.JSON;
@@ -29,43 +12,42 @@ import org.cloud.sonic.agent.bridge.android.AndroidDeviceBridgeTool;
 import org.cloud.sonic.agent.bridge.android.AndroidDeviceThreadPool;
 import org.cloud.sonic.agent.common.config.WsEndpointConfigure;
 import org.cloud.sonic.agent.common.maps.AndroidAPKMap;
-import org.cloud.sonic.agent.common.maps.WebSocketSessionMap;
+import org.cloud.sonic.agent.enums.AndroidTerminalMsgType;
 import org.cloud.sonic.agent.tools.BytesTool;
 import org.cloud.sonic.agent.tools.PortTool;
-import org.cloud.sonic.agent.tools.ScheduleTool;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 import java.io.*;
 import java.net.Socket;
 import java.nio.charset.StandardCharsets;
+import java.util.Arrays;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Future;
-import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 
-/**
- * @author ZhouYiXun
- * @des
- * @date 2021/10/30 23:35
- */
-@Component
 @Slf4j
+@Component
 @ServerEndpoint(value = "/websockets/android/terminal/{key}/{udId}/{token}", configurator = WsEndpointConfigure.class)
 public class AndroidTerminalWSServer implements IAndroidWSServer {
 
+    private static final String[] blackCommandList = {"reboot", "rm", "su "};
+
     @Value("${sonic.agent.key}")
     private String key;
-    private Map<Session, Future<?>> terminalMap = new ConcurrentHashMap<>();
-    private Map<Session, Thread> socketMap = new ConcurrentHashMap<>();
-    private Map<Session, OutputStream> outputStreamMap = new ConcurrentHashMap<>();
-    private Map<Session, Future<?>> logcatMap = new ConcurrentHashMap<>();
+    private static final Map<Session, Future<?>> terminalMap = new ConcurrentHashMap<>();
+    private static final Map<Session, Future<?>> logcatMap = new ConcurrentHashMap<>();
+    private static final Map<Session, Thread> socketMap = new ConcurrentHashMap<>();
+    private static final Map<Session, OutputStream> outputStreamMap = new ConcurrentHashMap<>();
+    private static final Map<Session, IDevice> deviceMap = new ConcurrentHashMap<>();
 
     @OnOpen
-    public void onOpen(Session session, @PathParam("key") String secretKey,
-                       @PathParam("udId") String udId, @PathParam("token") String token) throws Exception {
-        if (secretKey.length() == 0 || (!secretKey.equals(key)) || token.length() == 0) {
+    public void onOpen(Session session,
+                       @PathParam("key") String secretKey,
+                       @PathParam("udId") String udId,
+                       @PathParam("token") String token) throws Exception {
+        if (secretKey.isEmpty() || (!secretKey.equals(key)) || token.isEmpty()) {
             log.info("Auth Failed!");
             return;
         }
@@ -73,26 +55,22 @@ public class AndroidTerminalWSServer implements IAndroidWSServer {
         IDevice iDevice = AndroidDeviceBridgeTool.getIDeviceByUdId(udId);
 
         session.getUserProperties().put("udId", udId);
-        session.getUserProperties().put("id", String.format("%s-%s", this.getClass().getSimpleName(), udId));
-        WebSocketSessionMap.addSession(session);
-        saveUdIdMapAndSet(session, iDevice);
+        deviceMap.put(session, iDevice);
 
         String username = iDevice.getProperty("ro.product.device");
-        Future<?> terminal = AndroidDeviceThreadPool.cachedThreadPool.submit(() -> {
+        Thread.startVirtualThread(() -> {
             log.info("{} open terminal", udId);
             JSONObject ter = new JSONObject();
             ter.put("msg", "terminal");
             ter.put("user", username);
             BytesTool.sendText(session, ter.toJSONString());
         });
-        Future<?> logcat = AndroidDeviceThreadPool.cachedThreadPool.submit(() -> {
+        Thread.startVirtualThread(() -> {
             log.info("{} open logcat", udId);
             JSONObject ter = new JSONObject();
             ter.put("msg", "logcat");
             BytesTool.sendText(session, ter.toJSONString());
         });
-        terminalMap.put(session, terminal);
-        logcatMap.put(session, logcat);
         int wait = 0;
         boolean isInstall = true;
         while (AndroidAPKMap.getMap().get(udId) == null || (!AndroidAPKMap.getMap().get(udId))) {
@@ -108,149 +86,15 @@ public class AndroidTerminalWSServer implements IAndroidWSServer {
             exit(session);
         }
 
-        session.getUserProperties().put("schedule", ScheduleTool.schedule(() -> {
-            log.info("time up!");
-            if (session.isOpen()) {
-                JSONObject errMsg = new JSONObject();
-                errMsg.put("msg", "error");
-                BytesTool.sendText(session, errMsg.toJSONString());
-                exit(session);
-            }
-        }, BytesTool.remoteTimeout));
-
-        startService(udIdMap.get(session), session);
+        startService(iDevice, session);
     }
 
     @OnMessage
     public void onMessage(String message, Session session) {
-        JSONObject msg = JSON.parseObject(message);
-        log.info("{} send: {}", session.getUserProperties().get("id").toString(), msg);
-        switch (msg.getString("type")) {
-            case "appList": {
-                startService(udIdMap.get(session), session);
-                if (outputStreamMap.get(session) != null) {
-                    try {
-                        outputStreamMap.get(session).write("action_get_all_app_info".getBytes(StandardCharsets.UTF_8));
-                        outputStreamMap.get(session).flush();
-                    } catch (IOException e) {
-                        e.printStackTrace();
-                    }
-                }
-                break;
-            }
-            case "wifiList": {
-                startService(udIdMap.get(session), session);
-                if (outputStreamMap.get(session) != null) {
-                    try {
-                        outputStreamMap.get(session).write("action_get_all_wifi_info".getBytes(StandardCharsets.UTF_8));
-                        outputStreamMap.get(session).flush();
-                    } catch (IOException e) {
-                        e.printStackTrace();
-                    }
-                }
-                break;
-            }
-            case "stopCmd":
-                Future<?> ter = terminalMap.get(session);
-                if (!ter.isDone() || !ter.isCancelled()) {
-                    try {
-                        ter.cancel(true);
-                    } catch (Exception e) {
-                        log.error(e.getMessage());
-                    }
-                }
-                break;
-            case "command":
-                if (msg.getString("detail").contains("reboot")
-                        || msg.getString("detail").contains("rm")
-                        || msg.getString("detail").contains("su ")) {
-                    JSONObject done = new JSONObject();
-                    done.put("msg", "terDone");
-                    BytesTool.sendText(session, done.toJSONString());
-                    return;
-                }
-                ter = AndroidDeviceThreadPool.cachedThreadPool.submit(() -> {
-                    try {
-                        udIdMap.get(session).executeShellCommand(msg.getString("detail"), new IShellOutputReceiver() {
-                            @Override
-                            public void addOutput(byte[] bytes, int i, int i1) {
-                                String res = new String(bytes, i, i1);
-                                JSONObject resp = new JSONObject();
-                                resp.put("msg", "terResp");
-                                resp.put("detail", res);
-                                BytesTool.sendText(session, resp.toJSONString());
-                            }
-
-                            @Override
-                            public void flush() {
-                            }
-
-                            @Override
-                            public boolean isCancelled() {
-                                return false;
-                            }
-                        }, 0, TimeUnit.MILLISECONDS);
-                    } catch (Throwable e) {
-                        return;
-                    }
-                    JSONObject done = new JSONObject();
-                    done.put("msg", "terDone");
-                    BytesTool.sendText(session, done.toJSONString());
-                });
-                terminalMap.put(session, ter);
-                break;
-            case "stopLogcat": {
-                Future<?> logcat = logcatMap.get(session);
-                if (!logcat.isDone() || !logcat.isCancelled()) {
-                    try {
-                        logcat.cancel(true);
-                    } catch (Exception e) {
-                        log.error(e.getMessage());
-                    }
-                }
-                break;
-            }
-            case "logcat": {
-                Future<?> logcat = logcatMap.get(session);
-                if (!logcat.isDone() || !logcat.isCancelled()) {
-                    try {
-                        logcat.cancel(true);
-                    } catch (Exception e) {
-                        log.error(e.getMessage());
-                    }
-                }
-                logcat = AndroidDeviceThreadPool.cachedThreadPool.submit(() -> {
-                    try {
-                        udIdMap.get(session).executeShellCommand("logcat *:"
-                                + msg.getString("level") +
-                                (msg.getString("filter").length() > 0 ?
-                                        " | grep " + msg.getString("filter") : ""), new IShellOutputReceiver() {
-                            @Override
-                            public void addOutput(byte[] bytes, int i, int i1) {
-                                String res = new String(bytes, i, i1);
-                                JSONObject resp = new JSONObject();
-                                resp.put("msg", "logcatResp");
-                                resp.put("detail", res);
-                                BytesTool.sendText(session, resp.toJSONString());
-                            }
-
-                            @Override
-                            public void flush() {
-                            }
-
-                            @Override
-                            public boolean isCancelled() {
-                                return false;
-                            }
-                        }, 0, TimeUnit.MILLISECONDS);
-                    } catch (Throwable e) {
-                        return;
-                    }
-                });
-                logcatMap.put(session, logcat);
-                break;
-            }
-        }
+        JSONObject jsonObject = JSON.parseObject(message);
+        log.info("{} send: {}", session.getUserProperties().get("udId").toString(), jsonObject);
+        var msgType = AndroidTerminalMsgType.valueOf(jsonObject.getString("type"));
+        handleIncomingMessage(msgType, session, jsonObject);
     }
 
     @OnClose
@@ -266,39 +110,174 @@ public class AndroidTerminalWSServer implements IAndroidWSServer {
         BytesTool.sendText(session, errMsg.toJSONString());
     }
 
-    private void exit(Session session) {
-        synchronized (session) {
-            ScheduledFuture<?> future = (ScheduledFuture<?>) session.getUserProperties().get("schedule");
-            future.cancel(true);
-            WebSocketSessionMap.removeSession(session);
-            removeUdIdMapAndSet(session);
-            Future<?> cmd = terminalMap.get(session);
-            if (!cmd.isDone() || !cmd.isCancelled()) {
-                try {
-                    cmd.cancel(true);
-                } catch (Exception e) {
-                    log.error(e.getMessage());
-                }
-            }
-            stopService(session);
-            terminalMap.remove(session);
-            Future<?> logcat = logcatMap.get(session);
-            if (!logcat.isDone() || !logcat.isCancelled()) {
-                try {
-                    logcat.cancel(true);
-                } catch (Exception e) {
-                    log.error(e.getMessage());
-                }
-            }
-            logcatMap.remove(session);
-            udIdMap.remove(session);
-            try {
-                session.close();
-            } catch (IOException e) {
-                e.printStackTrace();
-            }
-            log.info("{} : quit.", session.getUserProperties().get("id").toString());
+    private void handleIncomingMessage(AndroidTerminalMsgType msgType, Session session, JSONObject jsonObject) {
+        switch (msgType) {
+            case appList -> handleAppList(session, jsonObject);
+            case wifiList -> handleWifiList(session, jsonObject);
+            case stopCmd -> handleStopCmd(session, jsonObject);
+            case command -> handleCommand(session, jsonObject);
+            case stopLogcat -> handleStopLogcat(session, jsonObject);
+            case logcat -> handleLogcat(session, jsonObject);
         }
+    }
+
+    private void handleAppList(Session session, JSONObject jsonObject) {
+        var iDevice = deviceMap.get(session);
+        var outPutStream = outputStreamMap.get(session);
+        startService(iDevice, session);
+        if (outPutStream != null) {
+            try {
+                outPutStream.write("action_get_all_app_info".getBytes(StandardCharsets.UTF_8));
+                outPutStream.flush();
+            } catch (IOException e) {
+                log.error("appList", e);
+            }
+        }
+    }
+
+    private void handleWifiList(Session session, JSONObject jsonObject) {
+        var iDevice = deviceMap.get(session);
+        var outPutStream = outputStreamMap.get(session);
+        startService(iDevice, session);
+        if (outPutStream != null) {
+            try {
+                outPutStream.write("action_get_all_wifi_info".getBytes(StandardCharsets.UTF_8));
+                outPutStream.flush();
+            } catch (IOException e) {
+                log.error("wifiList", e);
+            }
+        }
+    }
+
+    private void handleStopCmd(Session session, JSONObject jsonObject) {
+        Future<?> ter = terminalMap.get(session);
+        if (!ter.isDone() || !ter.isCancelled()) {
+            try {
+                ter.cancel(true);
+            } catch (Exception e) {
+                log.error(e.getMessage());
+            }
+        }
+    }
+
+    private void handleCommand(Session session, JSONObject jsonObject) {
+        String command = jsonObject.getString("detail");
+        if (Arrays.stream(blackCommandList).anyMatch(command::contains)) {
+            JSONObject done = new JSONObject();
+            done.put("msg", "terDone");
+            BytesTool.sendText(session, done.toJSONString());
+            return;
+        }
+        var iDevice = deviceMap.get(session);
+        var ter = AndroidDeviceThreadPool.cachedThreadPool.submit(() -> {
+            try {
+                iDevice.executeShellCommand(command, new IShellOutputReceiver() {
+                    @Override
+                    public void addOutput(byte[] data, int offset, int length) {
+                        String res = new String(data, offset, length);
+                        JSONObject resp = new JSONObject();
+                        resp.put("msg", "terResp");
+                        resp.put("detail", res);
+                        BytesTool.sendText(session, resp.toJSONString());
+                    }
+
+                    @Override
+                    public void flush() {
+                    }
+
+                    @Override
+                    public boolean isCancelled() {
+                        return false;
+                    }
+                }, 0, TimeUnit.MILLISECONDS);
+            } catch (Throwable e) {
+                return;
+            }
+            JSONObject done = new JSONObject();
+            done.put("msg", "terDone");
+            BytesTool.sendText(session, done.toJSONString());
+        });
+        terminalMap.put(session, ter);
+    }
+
+    private void handleStopLogcat(Session session, JSONObject jsonObject) {
+        Future<?> logcat = logcatMap.get(session);
+        if (logcat != null && !logcat.isDone() && !logcat.isCancelled()) {
+            try {
+                logcat.cancel(true);
+            } catch (Exception e) {
+                log.error(e.getMessage());
+            }
+        }
+    }
+
+    private void handleLogcat(Session session, JSONObject jsonObject) {
+        Future<?> logcat = logcatMap.get(session);
+        if (logcat != null && !logcat.isDone() && !logcat.isCancelled()) {
+            try {
+                logcat.cancel(true);
+            } catch (Exception e) {
+                log.error(e.getMessage());
+            }
+        }
+        var iDevice = deviceMap.get(session);
+        var command = "logcat *:" + jsonObject.getString("level") + (jsonObject.getString("filter").isEmpty() ? "" : " | grep " + jsonObject.getString("filter"));
+        logcat = AndroidDeviceThreadPool.cachedThreadPool.submit(() -> {
+            try {
+                iDevice.executeShellCommand(command, new IShellOutputReceiver() {
+                    @Override
+                    public void addOutput(byte[] bytes, int i, int i1) {
+                        String res = new String(bytes, i, i1);
+                        JSONObject resp = new JSONObject();
+                        resp.put("msg", "logcatResp");
+                        resp.put("detail", res);
+                        BytesTool.sendText(session, resp.toJSONString());
+                    }
+
+                    @Override
+                    public void flush() {
+                    }
+
+                    @Override
+                    public boolean isCancelled() {
+                        return false;
+                    }
+                }, 0, TimeUnit.MILLISECONDS);
+            } catch (Throwable e) {
+                return;
+            }
+        });
+        logcatMap.put(session, logcat);
+    }
+
+    private void exit(Session session) {
+        Future<?> ter = terminalMap.get(session);
+        if (ter != null && !ter.isDone() && !ter.isCancelled()) {
+            try {
+                ter.cancel(true);
+            } catch (Exception e) {
+                log.error(e.getMessage());
+            }
+        }
+        stopService(session);
+        terminalMap.remove(session);
+
+        Future<?> logcat = logcatMap.get(session);
+        if (logcat != null && !logcat.isDone() && !logcat.isCancelled()) {
+            try {
+                logcat.cancel(true);
+            } catch (Exception e) {
+                log.error(e.getMessage());
+            }
+        }
+        logcatMap.remove(session);
+        deviceMap.remove(session);
+        try {
+            session.close();
+        } catch (IOException e) {
+            log.error("IOException", e);
+        }
+        log.info("{} : quit.", session.getUserProperties().get("udId").toString());
     }
 
     public void startService(IDevice iDevice, Session session) {
@@ -308,85 +287,9 @@ public class AndroidTerminalWSServer implements IAndroidWSServer {
         try {
             Thread.sleep(2500);
         } catch (InterruptedException e) {
-            log.info(e.getMessage());
+            log.error("InterruptedException", e);
         }
-        Thread manager = new Thread(() -> {
-            int managerPort = PortTool.getPort();
-            AndroidDeviceBridgeTool.forward(iDevice, managerPort, 2334);
-            Socket managerSocket = null;
-            InputStream inputStream = null;
-            OutputStream outputStream = null;
-            InputStreamReader isr = null;
-            BufferedReader br = null;
-            try {
-                managerSocket = new Socket("localhost", managerPort);
-                inputStream = managerSocket.getInputStream();
-                outputStream = managerSocket.getOutputStream();
-                outputStreamMap.put(session, outputStream);
-                isr = new InputStreamReader(inputStream);
-                br = new BufferedReader(isr);
-                String s;
-                while (managerSocket.isConnected() && !Thread.interrupted()) {
-                    try {
-                        if ((s = br.readLine()) == null) break;
-                    } catch (IOException e) {
-                        e.printStackTrace();
-                        break;
-                    }
-                    JSONObject managerDetail = new JSONObject();
-                    JSONObject data = JSON.parseObject(s);
-                    if (data.getString("appName") != null) {
-                        managerDetail.put("msg", "appListDetail");
-                    } else {
-                        managerDetail.put("msg", "wifiListDetail");
-                    }
-                    managerDetail.put("detail", JSON.parseObject(s));
-                    BytesTool.sendText(session, managerDetail.toJSONString());
-                }
-            } catch (IOException e) {
-                log.info("error: {}", e.getMessage());
-            } finally {
-                if (outputStream != null) {
-                    try {
-                        outputStream.close();
-                    } catch (IOException e) {
-                        e.printStackTrace();
-                    }
-                }
-                if (br != null) {
-                    try {
-                        br.close();
-                    } catch (IOException e) {
-                        e.printStackTrace();
-                    }
-                }
-                if (isr != null) {
-                    try {
-                        isr.close();
-                    } catch (IOException e) {
-                        e.printStackTrace();
-                    }
-                }
-                if (inputStream != null) {
-                    try {
-                        inputStream.close();
-                    } catch (IOException e) {
-                        e.printStackTrace();
-                    }
-                }
-                if (managerSocket != null) {
-                    try {
-                        managerSocket.close();
-                        log.info("manager socket closed.");
-                    } catch (IOException e) {
-                        e.printStackTrace();
-                    }
-                }
-            }
-            AndroidDeviceBridgeTool.removeForward(iDevice, managerPort, 2334);
-            outputStreamMap.remove(session);
-            log.info("manager done.");
-        });
+        Thread manager = new Thread(() -> manageConnection(iDevice, session));
         manager.start();
         int w = 0;
         while (outputStreamMap.get(session) == null) {
@@ -396,30 +299,64 @@ public class AndroidTerminalWSServer implements IAndroidWSServer {
             try {
                 Thread.sleep(500);
             } catch (InterruptedException e) {
-                e.printStackTrace();
+                log.error("InterruptedException", e);
             }
             w++;
         }
         socketMap.put(session, manager);
     }
 
+    private void manageConnection(IDevice iDevice, Session session) {
+        int managerPort = PortTool.getPort();
+        AndroidDeviceBridgeTool.forward(iDevice, managerPort, 2334);
+
+        try (Socket managerSocket = new Socket("localhost", managerPort);
+             InputStream inputStream = managerSocket.getInputStream();
+             OutputStream outputStream = managerSocket.getOutputStream();
+             BufferedReader br = new BufferedReader(new InputStreamReader(inputStream))) {
+            outputStreamMap.put(session, outputStream);
+            String s;
+            while (managerSocket.isConnected() && !Thread.interrupted()) {
+                try {
+                    if ((s = br.readLine()) == null) break;
+                } catch (IOException e) {
+                    log.error("Error reading from socket", e);
+                    break;
+                }
+                JSONObject managerDetail = new JSONObject();
+                JSONObject data = JSON.parseObject(s);
+                managerDetail.put("msg", data.getString("appName") != null ? "appListDetail" : "wifiListDetail");
+                managerDetail.put("detail", data);
+                BytesTool.sendText(session, managerDetail.toJSONString());
+            }
+        } catch (IOException e) {
+            log.error("IO error", e);
+        } finally {
+            AndroidDeviceBridgeTool.removeForward(iDevice, managerPort, 2334);
+            outputStreamMap.remove(session);
+            log.info("manager done.");
+        }
+    }
+
     private void stopService(Session session) {
-        if (outputStreamMap.get(session) != null) {
+        var outputStream = outputStreamMap.get(session);
+        if (outputStream != null) {
             try {
-                outputStreamMap.get(session).write("org.cloud.sonic.android.STOP".getBytes(StandardCharsets.UTF_8));
-                outputStreamMap.get(session).flush();
+                outputStream.write("org.cloud.sonic.android.STOP".getBytes(StandardCharsets.UTF_8));
+                outputStream.flush();
             } catch (IOException e) {
-                e.printStackTrace();
+                log.error("stopService", e);
             }
         }
-        if (socketMap.get(session) != null) {
-            socketMap.get(session).interrupt();
+        var manager = socketMap.get(session);
+        if (manager != null) {
+            manager.interrupt();
             int wait = 0;
-            while (!socketMap.get(session).isInterrupted()) {
+            while (!manager.isInterrupted()) {
                 try {
                     Thread.sleep(1000);
                 } catch (InterruptedException e) {
-                    e.printStackTrace();
+                    log.error("InterruptedException", e);
                 }
                 wait++;
                 if (wait >= 3) {

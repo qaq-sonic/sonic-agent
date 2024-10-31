@@ -50,7 +50,6 @@ public class AgentApplication {
                 try {
                     Thread.sleep(5000);
                 } catch (InterruptedException e) {
-                    e.printStackTrace();
                     log.error("InterruptedException", e);
                 }
                 // 仅生成证书
