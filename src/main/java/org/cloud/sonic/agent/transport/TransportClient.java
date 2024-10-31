@@ -42,11 +42,14 @@ import org.testng.xml.XmlTest;
 import java.io.IOException;
 import java.net.URI;
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 
 @Slf4j
 public class TransportClient extends WebSocketClient {
+    private static final Map<String, ScheduledFuture<?>> occupyMap = new ConcurrentHashMap<>();
+
     private final String host;
     private final String version;
     private final Integer port;
@@ -156,7 +159,7 @@ public class TransportClient extends WebSocketClient {
                     }
                 }
 
-                OccupyMap.map.put(udId,
+                occupyMap.put(udId,
                         ScheduleTool.schedule(() -> {
                             log.info("time up!");
                             androidRelease(udId);
@@ -187,7 +190,7 @@ public class TransportClient extends WebSocketClient {
                     }
                 }
 
-                OccupyMap.map.put(udId,
+                occupyMap.put(udId,
                         ScheduleTool.schedule(() -> {
                             log.info("time up!");
                             iosRelease(udId);
@@ -205,10 +208,10 @@ public class TransportClient extends WebSocketClient {
     private void handleRelease(JSONObject jsonObject) {
         String udId = jsonObject.getString("udId");
         log.info("{} : release.", udId);
-        ScheduledFuture<?> future = OccupyMap.map.get(udId);
+        ScheduledFuture<?> future = occupyMap.get(udId);
         if (future != null) {
             future.cancel(true);
-            OccupyMap.map.remove(udId);
+            occupyMap.remove(udId);
             int platform = jsonObject.getInteger("platform");
             switch (platform) {
                 case PlatformType.ANDROID -> androidRelease(udId);

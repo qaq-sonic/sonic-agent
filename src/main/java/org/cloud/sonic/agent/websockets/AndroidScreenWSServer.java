@@ -11,7 +11,6 @@ import org.cloud.sonic.agent.bridge.android.AndroidDeviceBridgeTool;
 import org.cloud.sonic.agent.common.config.WsEndpointConfigure;
 import org.cloud.sonic.agent.common.maps.AndroidAPKMap;
 import org.cloud.sonic.agent.common.maps.AndroidDeviceManagerMap;
-import org.cloud.sonic.agent.common.maps.ScreenMap;
 import org.cloud.sonic.agent.tests.android.minicap.MiniCapUtil;
 import org.cloud.sonic.agent.tests.android.scrcpy.ScrcpyServerUtil;
 import org.cloud.sonic.agent.tests.handlers.AndroidMonitorHandler;
@@ -32,6 +31,7 @@ public class AndroidScreenWSServer {
 
     private static final String VIDEO_SETTING = "VIDEO_SETTING";
     private static final String PIC_SETTING = "PIC_SETTING";
+    private static final String VIDEO_THREAD = "VIDEO_THREAD";
 
     @Value("${sonic.agent.key}")
     private String key;
@@ -115,29 +115,32 @@ public class AndroidScreenWSServer {
     private void startScreen(Session session) {
         var iDevice = (IDevice) session.getUserProperties().get(DEVICE);
         if (iDevice != null) {
-            Thread old = ScreenMap.getMap().get(session);
-            if (old != null) {
-                old.interrupt();
-                do {
-                    try {
-                        Thread.sleep(1000);
-                    } catch (InterruptedException e) {
-                        log.error("InterruptedException", e);
-                    }
-                } while (ScreenMap.getMap().get(session) != null);
+            var oldVideoThread = (Thread) session.getUserProperties().get(VIDEO_THREAD);
+            if (oldVideoThread != null) {
+                oldVideoThread.interrupt();
+                try {
+                    oldVideoThread.join();
+                } catch (InterruptedException e) {
+                    log.error("Thread interrupted while waiting for old video thread to finish", e);
+                    Thread.currentThread().interrupt(); // Restore interrupt status
+                }
+                // Optionally, verify that the thread has been removed
+                if (session.getUserProperties().get(VIDEO_THREAD) != null) {
+                    log.warn("Old video thread still present in session properties after interrupt and join");
+                }
             }
             session.getUserProperties().putIfAbsent(VIDEO_SETTING, "scrcpy");
             switch ((String) session.getUserProperties().get(VIDEO_SETTING)) {
                 case "scrcpy" -> {
                     ScrcpyServerUtil scrcpyServerUtil = new ScrcpyServerUtil();
                     Thread scrcpyThread = scrcpyServerUtil.start(iDevice.getSerialNumber(), AndroidDeviceManagerMap.getRotationMap().get(iDevice.getSerialNumber()), session);
-                    ScreenMap.getMap().put(session, scrcpyThread);
+                    session.getUserProperties().put(VIDEO_THREAD, scrcpyThread);
                 }
                 case "minicap" -> {
                     MiniCapUtil miniCapUtil = new MiniCapUtil();
                     AtomicReference<String[]> banner = new AtomicReference<>(new String[24]);
                     Thread miniCapThread = miniCapUtil.start(iDevice.getSerialNumber(), banner, null, session.getUserProperties().get(PIC_SETTING) == null ? "high" : (String) session.getUserProperties().get(PIC_SETTING), AndroidDeviceManagerMap.getRotationMap().get(iDevice.getSerialNumber()), session);
-                    ScreenMap.getMap().put(session, miniCapThread);
+                    session.getUserProperties().put(VIDEO_THREAD, miniCapThread);
                 }
             }
             JSONObject picFinish = new JSONObject();
@@ -151,8 +154,9 @@ public class AndroidScreenWSServer {
         var iDevice = (IDevice) session.getUserProperties().get(DEVICE);
         androidMonitorHandler.stopMonitor(iDevice);
         AndroidDeviceManagerMap.getRotationMap().remove(udId);
-        if (ScreenMap.getMap().get(session) != null) {
-            ScreenMap.getMap().get(session).interrupt();
+        var videoThread = (Thread) session.getUserProperties().get(VIDEO_THREAD);
+        if (videoThread != null) {
+            videoThread.interrupt();
         }
         try {
             session.close();

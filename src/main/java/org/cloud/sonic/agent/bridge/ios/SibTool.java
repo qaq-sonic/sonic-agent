@@ -937,7 +937,7 @@ public class SibTool implements ApplicationListener<ContextRefreshedEvent> {
                         sendText(session, perfDetail.toJSONString());
                     }
                     if (logUtil != null) {
-                        logUtil.sendPerLog(perf.toJSONString());
+                        logUtil.sendPerLog(session, perf.toJSONString());
                     }
                 } catch (Exception e) {
                 }

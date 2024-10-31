@@ -84,12 +84,10 @@ public class BytesTool {
         if (session == null || !session.isOpen()) {
             return;
         }
-        synchronized (session) {
-            try {
-                session.getBasicRemote().sendBinary(ByteBuffer.wrap(message));
-            } catch (IllegalStateException | IOException e) {
-                log.error("WebSocket send msg error...connection has been closed.");
-            }
+        try {
+            session.getBasicRemote().sendBinary(ByteBuffer.wrap(message));
+        } catch (IllegalStateException | IOException e) {
+            log.error("WebSocket send msg error...connection has been closed.");
         }
     }
 
@@ -97,12 +95,10 @@ public class BytesTool {
         if (session == null || !session.isOpen()) {
             return;
         }
-        synchronized (session) {
-            try {
-                session.getBasicRemote().sendBinary(message);
-            } catch (IllegalStateException | IOException e) {
-                log.error("WebSocket send msg error...connection has been closed.");
-            }
+        try {
+            session.getBasicRemote().sendBinary(message);
+        } catch (IllegalStateException | IOException e) {
+            log.error("WebSocket send msg error...connection has been closed.");
         }
     }
 
@@ -110,12 +106,10 @@ public class BytesTool {
         if (session == null || !session.isOpen()) {
             return;
         }
-        synchronized (session) {
-            try {
-                session.getBasicRemote().sendText(message);
-            } catch (IllegalStateException | IOException e) {
-                log.error("WebSocket send msg error...connection has been closed.");
-            }
+        try {
+            session.getBasicRemote().sendText(message);
+        } catch (IllegalStateException | IOException e) {
+            log.error("WebSocket send msg error...connection has been closed.");
         }
     }
 

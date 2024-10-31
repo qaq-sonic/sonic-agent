@@ -19,12 +19,10 @@ package org.cloud.sonic.agent.tests;
 
 import com.alibaba.fastjson.JSONObject;
 import jakarta.websocket.Session;
+import lombok.extern.slf4j.Slf4j;
 import org.cloud.sonic.agent.common.interfaces.DeviceStatus;
 import org.cloud.sonic.agent.common.interfaces.StepType;
-import org.cloud.sonic.agent.common.maps.WebSocketSessionMap;
 import org.cloud.sonic.agent.transport.TransportWorker;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.text.SimpleDateFormat;
@@ -35,8 +33,8 @@ import java.util.Date;
  * @des log工具类，会发送到服务端入库
  * @date 2021/8/16 19:54
  */
+@Slf4j
 public class LogUtil {
-    private final Logger logger = LoggerFactory.getLogger(LogUtil.class);
     public String sessionId = "";
     public String type;
     public int caseId = 0;
@@ -55,9 +53,23 @@ public class LogUtil {
         message.put("cid", caseId);
         message.put("rid", resultId);
         message.put("udId", udId);
-        logger.info(message.toJSONString());
+        log.info(message.toJSONString());
         if (type.equals(DeviceStatus.DEBUGGING)) {
-            sendToWebSocket(WebSocketSessionMap.getSession(sessionId), message);
+//            sendToWebSocket(WebSocketSessionMap.getSession(sessionId), message);
+        }
+        if (type.equals(DeviceStatus.TESTING)) {
+            sendToServer(message);
+        }
+    }
+
+    public void send(Session session, JSONObject message) {
+        //先加上消息附带信息
+        message.put("cid", caseId);
+        message.put("rid", resultId);
+        message.put("udId", udId);
+        log.info(message.toJSONString());
+        if (type.equals(DeviceStatus.DEBUGGING)) {
+            sendToWebSocket(session, message);
         }
         if (type.equals(DeviceStatus.TESTING)) {
             sendToServer(message);
@@ -88,13 +100,11 @@ public class LogUtil {
         if (session == null || !session.isOpen()) {
             return;
         }
-        synchronized (session) {
-            try {
-                message.put("time", getDateToString());
-                session.getBasicRemote().sendText(message.toJSONString());
-            } catch (IllegalStateException | IOException e) {
-                logger.error(e.getMessage());
-            }
+        try {
+            message.put("time", getDateToString());
+            session.getBasicRemote().sendText(message.toJSONString());
+        } catch (IllegalStateException | IOException e) {
+            log.error(e.getMessage());
         }
     }
 
@@ -152,13 +162,13 @@ public class LogUtil {
      * @des 发送性能数据
      * @date 2021/8/16 19:58
      */
-    public void sendPerLog(String detail) {
+    public void sendPerLog(Session session, String detail) {
         JSONObject log = new JSONObject();
         log.put("msg", "perform");
         log.put("des", "");
         log.put("status", 1);
         log.put("log", detail);
-        send(log);
+        send(session, log);
     }
 
     /**

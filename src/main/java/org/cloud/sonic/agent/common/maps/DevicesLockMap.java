@@ -54,15 +54,14 @@ public class DevicesLockMap {
         Semaphore deviceLock;
 
         // 原子操作，避免put后被别的线程remove造成当前线程lock失效
-        synchronized (WebSocketSessionMap.class) {
-            Semaphore res = devicesLockMap.get(udId);
-            if (res == null) {
-                deviceLock = new Semaphore(1);
-                devicesLockMap.put(udId, deviceLock);
-            } else {
-                deviceLock = res;
-            }
+        Semaphore res = devicesLockMap.get(udId);
+        if (res == null) {
+            deviceLock = new Semaphore(1);
+            devicesLockMap.put(udId, deviceLock);
+        } else {
+            deviceLock = res;
         }
+
 
         // 无超时获取锁逻辑，直接锁并返回true
         if (timeOut == null) {
@@ -87,10 +86,8 @@ public class DevicesLockMap {
     public static void unlockAndRemoveByUdId(String udId) {
         Assert.hasText(udId, "udId must not be blank");
         Semaphore deviceLock;
-        synchronized (WebSocketSessionMap.class) {
-            deviceLock = devicesLockMap.get(udId);
-            removeLockByUdId(udId);
-        }
+        deviceLock = devicesLockMap.get(udId);
+        removeLockByUdId(udId);
         if (deviceLock != null) {
             deviceLock.release();
         }

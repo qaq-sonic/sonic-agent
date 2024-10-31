@@ -204,7 +204,7 @@ public class AndroidSupplyTool implements ApplicationListener<ContextRefreshedEv
                 BytesTool.sendText(session, perfDetail.toJSONString());
             }
             if (logUtil != null) {
-                logUtil.sendPerLog(perf.toJSONString());
+                logUtil.sendPerLog(session, perf.toJSONString());
             }
         } catch (Exception e) {
             log.error("Error processing performance monitor line", e);

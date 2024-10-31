@@ -75,6 +75,7 @@ public class AndroidDeviceBridgeTool implements ApplicationListener<ContextRefre
     private String ver;
     @Value("${sonic.saus}")
     private String uiaVer;
+
     @Autowired
     private RestTemplate restTemplateBean;
 
@@ -684,7 +685,7 @@ public class AndroidDeviceBridgeTool implements ApplicationListener<ContextRefre
                 .replaceAll("package:", "")
                 .replaceAll("\n", "")
                 .replaceAll("\t", "");
-        if (path.length() > 0 && checkSonicApkVersion(iDevice)) {
+        if (!path.isEmpty() && checkSonicApkVersion(iDevice)) {
             log.info("Check Sonic Apk version and status pass...");
             return true;
         } else {
