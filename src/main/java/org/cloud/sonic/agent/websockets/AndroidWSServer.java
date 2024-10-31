@@ -1,20 +1,3 @@
-/*
- *   sonic-agent  Agent of Sonic Cloud Real Machine Platform.
- *   Copyright (C) 2022 SonicCloudOrg
- *
- *   This program is free software: you can redistribute it and/or modify
- *   it under the terms of the GNU Affero General Public License as published
- *   by the Free Software Foundation, either version 3 of the License, or
- *   (at your option) any later version.
- *
- *   This program is distributed in the hope that it will be useful,
- *   but WITHOUT ANY WARRANTY; without even the implied warranty of
- *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- *   GNU Affero General Public License for more details.
- *
- *   You should have received a copy of the GNU Affero General Public License
- *   along with this program.  If not, see <https://www.gnu.org/licenses/>.
- */
 package org.cloud.sonic.agent.websockets;
 
 import com.alibaba.fastjson.JSON;
@@ -34,18 +17,16 @@ import org.cloud.sonic.agent.common.interfaces.DeviceStatus;
 import org.cloud.sonic.agent.common.maps.AndroidAPKMap;
 import org.cloud.sonic.agent.common.maps.DevicesLockMap;
 import org.cloud.sonic.agent.common.maps.HandlerMap;
-import org.cloud.sonic.agent.common.maps.WebSocketSessionMap;
 import org.cloud.sonic.agent.common.models.HandleContext;
+import org.cloud.sonic.agent.components.SGMTool;
+import org.cloud.sonic.agent.components.UploadTools;
 import org.cloud.sonic.agent.tests.TaskManager;
 import org.cloud.sonic.agent.tests.android.AndroidRunStepThread;
 import org.cloud.sonic.agent.tests.handlers.AndroidStepHandler;
 import org.cloud.sonic.agent.tests.handlers.AndroidTouchHandler;
 import org.cloud.sonic.agent.tools.BytesTool;
 import org.cloud.sonic.agent.tools.PortTool;
-import org.cloud.sonic.agent.components.SGMTool;
-import org.cloud.sonic.agent.tools.ScheduleTool;
 import org.cloud.sonic.agent.tools.file.DownloadTool;
-import org.cloud.sonic.agent.components.UploadTools;
 import org.cloud.sonic.agent.transport.TransportWorker;
 import org.cloud.sonic.driver.common.tool.SonicRespException;
 import org.springframework.beans.factory.annotation.Value;
@@ -56,7 +37,6 @@ import java.io.File;
 import java.io.IOException;
 import java.net.Socket;
 import java.util.Calendar;
-import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 
 import static org.cloud.sonic.agent.tools.BytesTool.sendText;
@@ -64,17 +44,18 @@ import static org.cloud.sonic.agent.tools.BytesTool.sendText;
 @Component
 @Slf4j
 @ServerEndpoint(value = "/websockets/android/{key}/{udId}/{token}", configurator = WsEndpointConfigure.class)
-public class AndroidWSServer implements IAndroidWSServer {
+public class AndroidWSServer {
+
+    private static final String DEVICE = "DEVICE";
+    private static final String UDID = "UDID";
+
     @Value("${sonic.agent.key}")
     private String key;
     @Value("${server.port}")
     private int port;
 
     @OnOpen
-    public void onOpen(Session session,
-                       @PathParam("key") String secretKey,
-                       @PathParam("udId") String udId,
-                       @PathParam("token") String token) throws Exception {
+    public void onOpen(Session session, @PathParam("key") String secretKey, @PathParam("udId") String udId, @PathParam("token") String token) throws Exception {
         if (secretKey.isEmpty() || (!secretKey.equals(key)) || token.isEmpty()) {
             log.info("Auth Failed!");
             return;
@@ -94,10 +75,8 @@ public class AndroidWSServer implements IAndroidWSServer {
             return;
         }
 
-        session.getUserProperties().put("udId", udId);
-        session.getUserProperties().put("id", String.format("%s-%s", this.getClass().getSimpleName(), udId));
-        WebSocketSessionMap.addSession(session);
-        saveUdIdMapAndSet(session, iDevice);
+        session.getUserProperties().put(UDID, udId);
+        session.getUserProperties().put(DEVICE, iDevice);
 
         // 更新使用用户
         JSONObject jsonDebug = new JSONObject();
@@ -105,8 +84,6 @@ public class AndroidWSServer implements IAndroidWSServer {
         jsonDebug.put("token", token);
         jsonDebug.put("udId", udId);
         TransportWorker.send(jsonDebug);
-
-        saveUdIdMapAndSet(session, iDevice);
 
         AndroidAPKMap.getMap().put(udId, false);
 
@@ -133,7 +110,7 @@ public class AndroidWSServer implements IAndroidWSServer {
 
     @OnClose
     public void onClose(Session session) {
-        String udId = (String) session.getUserProperties().get("udId");
+        String udId = (String) session.getUserProperties().get(UDID);
         try {
             exit(session);
         } finally {
@@ -153,8 +130,8 @@ public class AndroidWSServer implements IAndroidWSServer {
     @OnMessage
     public void onMessage(String message, Session session) {
         JSONObject msg = JSON.parseObject(message);
-        log.info("{} send: {}", session.getUserProperties().get("id").toString(), msg);
-        IDevice iDevice = udIdMap.get(session);
+        log.info("{} send: {}", session.getUserProperties().get(UDID).toString(), msg);
+        var iDevice = (IDevice) session.getUserProperties().get(DEVICE);
         switch (msg.getString("type")) {
             case "startPerfmon" ->
                     AndroidSupplyTool.startPerfmon(iDevice.getSerialNumber(), msg.getString("bundleId"), session, null, 1000);
@@ -183,15 +160,15 @@ public class AndroidWSServer implements IAndroidWSServer {
                 int pPort = PortTool.releaseAndGetPort(portSocket);
                 int webPort = PortTool.releaseAndGetPort(webPortSocket);
                 SGMTool.startProxy(iDevice.getSerialNumber(), SGMTool.getCommand(pPort, webPort));
-                AndroidDeviceBridgeTool.startProxy(iDevice, getHost(), pPort);
+                AndroidDeviceBridgeTool.startProxy(iDevice, BytesTool.agentHost, pPort);
                 JSONObject proxy = new JSONObject();
                 proxy.put("webPort", webPort);
                 proxy.put("port", pPort);
                 proxy.put("msg", "proxyResult");
                 BytesTool.sendText(session, proxy.toJSONString());
             }
-            case "installCert" -> AndroidDeviceBridgeTool.executeCommand(iDevice,
-                    String.format("am start -a android.intent.action.VIEW -d https://%s:%d/assets/download", getHost(), port));
+            case "installCert" ->
+                    AndroidDeviceBridgeTool.executeCommand(iDevice, String.format("am start -a android.intent.action.VIEW -d https://%s:%d/assets/download", BytesTool.agentHost, port));
             case "forwardView" -> {
                 JSONObject forwardView = new JSONObject();
                 forwardView.put("msg", "forwardView");
@@ -237,8 +214,7 @@ public class AndroidWSServer implements IAndroidWSServer {
                 result.put("msg", "pushResult");
                 try {
                     File localFile = DownloadTool.download(msg.getString("file"));
-                    iDevice.pushFile(localFile.getAbsolutePath()
-                            , msg.getString("path"));
+                    iDevice.pushFile(localFile.getAbsolutePath(), msg.getString("path"));
                     result.put("status", "success");
                 } catch (IOException | AdbCommandRejectedException | SyncException | TimeoutException e) {
                     result.put("status", "fail");
@@ -268,15 +244,12 @@ public class AndroidWSServer implements IAndroidWSServer {
                         jsonDebug.put("key", key);
                         jsonDebug.put("udId", iDevice.getSerialNumber());
                         jsonDebug.put("pwd", msg.getString("pwd"));
-                        jsonDebug.put("sessionId", session.getUserProperties().get("id").toString());
+                        jsonDebug.put("sessionId", session.getUserProperties().get(UDID).toString());
                         jsonDebug.put("caseId", msg.getInteger("caseId"));
                         TransportWorker.send(jsonDebug);
                     }
-                    case "stopStep" -> TaskManager.forceStopDebugStepThread(
-                            AndroidRunStepThread.ANDROID_RUN_STEP_TASK_PRE.formatted(
-                                    0, msg.getInteger("caseId"), msg.getString("udId")
-                            )
-                    );
+                    case "stopStep" ->
+                            TaskManager.forceStopDebugStepThread(AndroidRunStepThread.ANDROID_RUN_STEP_TASK_PRE.formatted(0, msg.getInteger("caseId"), msg.getString("udId")));
                     case "openApp" -> AndroidDeviceThreadPool.cachedThreadPool.execute(() -> {
                         AndroidDeviceBridgeTool.activateApp(iDevice, msg.getString("pkg"));
                     });
@@ -388,7 +361,7 @@ public class AndroidWSServer implements IAndroidWSServer {
                         jsonCheck.put("key", key);
                         jsonCheck.put("udId", iDevice.getSerialNumber());
                         jsonCheck.put("pwd", msg.getString("pwd"));
-                        jsonCheck.put("sessionId", session.getUserProperties().get("id").toString());
+                        jsonCheck.put("sessionId", session.getUserProperties().get(UDID).toString());
                         jsonCheck.put("element", msg.getString("element"));
                         jsonCheck.put("eleType", msg.getString("eleType"));
                         jsonCheck.put("pf", 1);
@@ -400,64 +373,59 @@ public class AndroidWSServer implements IAndroidWSServer {
     }
 
     private void openDriver(IDevice iDevice, Session session) {
-        synchronized (session) {
-            AndroidStepHandler androidStepHandler = new AndroidStepHandler();
-            androidStepHandler.setTestMode(0, 0, iDevice.getSerialNumber(), DeviceStatus.DEBUGGING, session.getUserProperties().get("id").toString());
-            JSONObject result = new JSONObject();
-            AndroidDeviceThreadPool.cachedThreadPool.execute(() -> {
-                try {
-                    AndroidDeviceLocalStatus.startDebug(iDevice.getSerialNumber());
-                    int port = AndroidDeviceBridgeTool.startUiaServer(iDevice);
-                    androidStepHandler.startAndroidDriver(iDevice, port);
-                    result.put("status", "success");
-                    result.put("port", port);
-                    HandlerMap.getAndroidMap().put(iDevice.getSerialNumber(), androidStepHandler);
-                } catch (Exception e) {
-                    log.error(e.getMessage());
-                    result.put("status", "error");
-                    androidStepHandler.closeAndroidDriver();
-                } finally {
-                    result.put("msg", "openDriver");
-                    BytesTool.sendText(session, result.toJSONString());
-                }
-            });
-        }
+        AndroidStepHandler androidStepHandler = new AndroidStepHandler();
+        androidStepHandler.setTestMode(0, 0, iDevice.getSerialNumber(), DeviceStatus.DEBUGGING, session.getUserProperties().get(UDID).toString());
+        JSONObject result = new JSONObject();
+        AndroidDeviceThreadPool.cachedThreadPool.execute(() -> {
+            try {
+                AndroidDeviceLocalStatus.startDebug(iDevice.getSerialNumber());
+                int port = AndroidDeviceBridgeTool.startUiaServer(iDevice);
+                androidStepHandler.startAndroidDriver(iDevice, port);
+                result.put("status", "success");
+                result.put("port", port);
+                HandlerMap.getAndroidMap().put(iDevice.getSerialNumber(), androidStepHandler);
+            } catch (Exception e) {
+                log.error(e.getMessage());
+                result.put("status", "error");
+                androidStepHandler.closeAndroidDriver();
+            } finally {
+                result.put("msg", "openDriver");
+                BytesTool.sendText(session, result.toJSONString());
+            }
+        });
+
     }
 
     private void exit(Session session) {
-        synchronized (session) {
-            AndroidDeviceLocalStatus.finish(session.getUserProperties().get("udId") + "");
-            IDevice iDevice = udIdMap.get(session);
-            try {
-                AndroidStepHandler androidStepHandler = HandlerMap.getAndroidMap().get(iDevice.getSerialNumber());
-                if (androidStepHandler != null) {
-                    androidStepHandler.closeAndroidDriver();
-                }
-            } catch (Exception e) {
-                log.info("close driver failed.");
-            } finally {
-                HandlerMap.getAndroidMap().remove(iDevice.getSerialNumber());
+        AndroidDeviceLocalStatus.finish(session.getUserProperties().get(UDID) + "");
+        var iDevice = (IDevice) session.getUserProperties().get(DEVICE);
+        try {
+            AndroidStepHandler androidStepHandler = HandlerMap.getAndroidMap().get(iDevice.getSerialNumber());
+            if (androidStepHandler != null) {
+                androidStepHandler.closeAndroidDriver();
             }
-            if (iDevice != null) {
-                AndroidDeviceBridgeTool.clearProxy(iDevice);
-                AndroidDeviceBridgeTool.clearWebView(iDevice);
-                AndroidSupplyTool.stopShare(iDevice.getSerialNumber());
-                AndroidSupplyTool.stopPerfmon(iDevice.getSerialNumber());
-                SGMTool.stopProxy(iDevice.getSerialNumber());
-                AndroidAPKMap.getMap().remove(iDevice.getSerialNumber());
-                AndroidTouchHandler.stopTouch(iDevice);
-            }
-            removeUdIdMapAndSet(session);
-            WebSocketSessionMap.removeSession(session);
-            try {
-                session.close();
-            } catch (IOException e) {
-                e.printStackTrace();
-            }
-            log.info("{} : quit.", session.getUserProperties().get("id").toString());
-            if (AndroidDeviceBridgeTool.getOrientation(iDevice) != 0) {
-                AndroidDeviceBridgeTool.pressKey(iDevice, AndroidKey.HOME);
-            }
+        } catch (Exception e) {
+            log.info("close driver failed.");
+        } finally {
+            HandlerMap.getAndroidMap().remove(iDevice.getSerialNumber());
+        }
+        if (iDevice != null) {
+            AndroidDeviceBridgeTool.clearProxy(iDevice);
+            AndroidDeviceBridgeTool.clearWebView(iDevice);
+            AndroidSupplyTool.stopShare(iDevice.getSerialNumber());
+            AndroidSupplyTool.stopPerfmon(iDevice.getSerialNumber());
+            SGMTool.stopProxy(iDevice.getSerialNumber());
+            AndroidAPKMap.getMap().remove(iDevice.getSerialNumber());
+            AndroidTouchHandler.stopTouch(iDevice);
+        }
+        try {
+            session.close();
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+        log.info("{} : quit.", session.getUserProperties().get(UDID).toString());
+        if (AndroidDeviceBridgeTool.getOrientation(iDevice) != 0) {
+            AndroidDeviceBridgeTool.pressKey(iDevice, AndroidKey.HOME);
         }
     }
 }

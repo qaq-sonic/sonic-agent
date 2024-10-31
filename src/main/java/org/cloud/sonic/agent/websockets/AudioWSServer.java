@@ -1,20 +1,3 @@
-/*
- *   sonic-agent  Agent of Sonic Cloud Real Machine Platform.
- *   Copyright (C) 2022 SonicCloudOrg
- *
- *   This program is free software: you can redistribute it and/or modify
- *   it under the terms of the GNU Affero General Public License as published
- *   by the Free Software Foundation, either version 3 of the License, or
- *   (at your option) any later version.
- *
- *   This program is distributed in the hope that it will be useful,
- *   but WITHOUT ANY WARRANTY; without even the implied warranty of
- *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- *   GNU Affero General Public License for more details.
- *
- *   You should have received a copy of the GNU Affero General Public License
- *   along with this program.  If not, see <https://www.gnu.org/licenses/>.
- */
 package org.cloud.sonic.agent.websockets;
 
 import com.android.ddmlib.IDevice;
@@ -28,7 +11,6 @@ import lombok.extern.slf4j.Slf4j;
 import org.cloud.sonic.agent.bridge.android.AndroidDeviceBridgeTool;
 import org.cloud.sonic.agent.common.config.WsEndpointConfigure;
 import org.cloud.sonic.agent.common.maps.AndroidAPKMap;
-import org.cloud.sonic.agent.common.maps.WebSocketSessionMap;
 import org.cloud.sonic.agent.tools.BytesTool;
 import org.cloud.sonic.agent.tools.PortTool;
 import org.springframework.beans.factory.annotation.Value;
@@ -44,23 +26,25 @@ import java.util.concurrent.ConcurrentHashMap;
 @Component
 @Slf4j
 @ServerEndpoint(value = "/websockets/audio/{key}/{udId}", configurator = WsEndpointConfigure.class)
-public class AudioWSServer implements IAndroidWSServer {
+public class AudioWSServer {
+
+    private static final String DEVICE = "DEVICE";
+    private static final String UDID = "UDID";
+
     @Value("${sonic.agent.key}")
     private String key;
     private Map<Session, Thread> audioMap = new ConcurrentHashMap<>();
 
     @OnOpen
     public void onOpen(Session session, @PathParam("key") String secretKey, @PathParam("udId") String udId) throws Exception {
-        if (secretKey.length() == 0 || (!secretKey.equals(key))) {
+        if (secretKey.isEmpty() || (!secretKey.equals(key))) {
             log.info("Auth Failed!");
             return;
         }
         IDevice iDevice = AndroidDeviceBridgeTool.getIDeviceByUdId(udId);
 
-        session.getUserProperties().put("udId", udId);
-        session.getUserProperties().put("id", String.format("%s-%s", this.getClass().getSimpleName(), udId));
-        WebSocketSessionMap.addSession(session);
-        saveUdIdMapAndSet(session, iDevice);
+        session.getUserProperties().put(UDID, udId);
+        session.getUserProperties().put(DEVICE, iDevice);
 
         int wait = 0;
         boolean isInstall = true;
@@ -81,7 +65,7 @@ public class AudioWSServer implements IAndroidWSServer {
 
     private void startAudio(Session session) {
         stopAudio(session);
-        IDevice iDevice = udIdMap.get(session);
+        var iDevice = (IDevice) session.getUserProperties().get(DEVICE);
         AndroidDeviceBridgeTool.executeCommand(iDevice, "appops set org.cloud.sonic.android PROJECT_MEDIA allow");
         AndroidDeviceBridgeTool.executeCommand(iDevice, "appops set org.cloud.sonic.android RECORD_AUDIO allow");
         AndroidDeviceBridgeTool.executeCommand(iDevice, "am start -n org.cloud.sonic.android/.plugin.audioPlugin.AudioActivity");
@@ -195,13 +179,11 @@ public class AudioWSServer implements IAndroidWSServer {
 
     private void exit(Session session) {
         stopAudio(session);
-        WebSocketSessionMap.removeSession(session);
-        removeUdIdMapAndSet(session);
         try {
             session.close();
         } catch (IOException e) {
             e.printStackTrace();
         }
-        log.info("{} : quit.", session.getUserProperties().get("id").toString());
+        log.info("{} : quit.", session.getUserProperties().get(UDID).toString());
     }
 }

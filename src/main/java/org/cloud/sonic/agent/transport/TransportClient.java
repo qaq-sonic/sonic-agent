@@ -71,7 +71,7 @@ public class TransportClient extends WebSocketClient {
             MsgType msgType = MsgType.valueOf(jsonObject.getString("msg"));
 
             Thread.startVirtualThread(() -> handleIncomingMessage(msgType, jsonObject));
-        }catch (IllegalArgumentException e) {
+        } catch (IllegalArgumentException e) {
             // Handle the case where msgTypeStr is not a valid MsgType
             log.error("Invalid message type: {}", jsonObject.getString("msg"));
         }
@@ -111,7 +111,9 @@ public class TransportClient extends WebSocketClient {
         }
     }
 
-    private void handlePong(JSONObject jsonObject) {}
+    private void handlePong(JSONObject jsonObject) {
+    }
+
     private void handleOccupy(JSONObject jsonObject) {
         String udId = jsonObject.getString("udId");
         String token = jsonObject.getString("token");
@@ -199,6 +201,7 @@ public class TransportClient extends WebSocketClient {
         jsonDebug.put("udId", udId);
         TransportWorker.send(jsonDebug);
     }
+
     private void handleRelease(JSONObject jsonObject) {
         String udId = jsonObject.getString("udId");
         log.info("{} : release.", udId);
@@ -213,12 +216,14 @@ public class TransportClient extends WebSocketClient {
             }
         }
     }
+
     private void handleStopDebug(JSONObject jsonObject) {
         String udId = jsonObject.getString("udId");
         List<String> sessionList = Arrays.asList("AndroidWSServer", "AndroidTerminalWSServer", "AndroidScreenWSServer",
                 "AudioWSServer", "IOSWSServer", "IOSTerminalWSServer", "IOSScreenWSServer");
         for (String ss : sessionList) {
-            Session session = WebSocketSessionMap.getSession(String.format("%s-%s", ss, udId));
+//            Session session = WebSocketSessionMap.getSession(String.format("%s-%s", ss, udId));
+            Session session = null;
             if (session == null) {
                 continue;
             }
@@ -252,6 +257,7 @@ public class TransportClient extends WebSocketClient {
             }
         }
     }
+
     private void handleSettings(JSONObject jsonObject) {
         if (jsonObject.getInteger("id") != null) {
             BytesTool.agentId = jsonObject.getInteger("id");
@@ -266,6 +272,7 @@ public class TransportClient extends WebSocketClient {
             BytesTool.remoteTimeout = jsonObject.getInteger("remoteTimeout");
         }
     }
+
     private void handleAuth(JSONObject jsonObject) {
         if (!jsonObject.getString("result").equals("pass")) {
             TransportWorker.setIsKeyAuth(false);
@@ -307,9 +314,11 @@ public class TransportClient extends WebSocketClient {
             }
         }
     }
+
     private void handleShutdown(JSONObject jsonObject) {
         AgentManagerTool.stop();
     }
+
     private void handleReboot(JSONObject jsonObject) {
         if (jsonObject.getInteger("platform") == PlatformType.ANDROID) {
             IDevice rebootDevice = AndroidDeviceBridgeTool.getIDeviceByUdId(jsonObject.getString("udId"));
@@ -323,15 +332,18 @@ public class TransportClient extends WebSocketClient {
             }
         }
     }
+
     private void handleHeartBeat(JSONObject jsonObject) {
         JSONObject heartBeat = new JSONObject();
         heartBeat.put("msg", "heartBeat");
         heartBeat.put("status", "alive");
         TransportWorker.send(heartBeat);
     }
+
     private void handleHub(JSONObject jsonObject) {
         PHCTool.setPosition(jsonObject.getInteger("position"), jsonObject.getString("type"));
     }
+
     private void handleRunStep(JSONObject jsonObject) {
         if (jsonObject.getInteger("pf") == PlatformType.ANDROID) {
             runAndroidStep(jsonObject);
@@ -340,6 +352,7 @@ public class TransportClient extends WebSocketClient {
             runIOSStep(jsonObject);
         }
     }
+
     private void handleDebugStep(JSONObject jsonObject) {
         if (jsonObject.getInteger("pf") == PlatformType.ANDROID) {
             debugAndroidStep(jsonObject);
@@ -348,6 +361,7 @@ public class TransportClient extends WebSocketClient {
             debugIOSStep(jsonObject);
         }
     }
+
     private void handleSuite(JSONObject jsonObject) {
         List<JSONObject> cases = jsonObject.getJSONArray("cases").toJavaList(JSONObject.class);
         TestNG tng = new TestNG();
@@ -376,6 +390,7 @@ public class TransportClient extends WebSocketClient {
         tng.addListener(new SuiteListener());
         tng.run();
     }
+
     private void handleForceStopSuite(JSONObject jsonObject) {
         List<JSONObject> caseList = jsonObject.getJSONArray("cases").toJavaList(JSONObject.class);
         for (JSONObject aCase : caseList) {

@@ -1,25 +1,9 @@
-/*
- *   sonic-agent  Agent of Sonic Cloud Real Machine Platform.
- *   Copyright (C) 2022 SonicCloudOrg
- *
- *   This program is free software: you can redistribute it and/or modify
- *   it under the terms of the GNU Affero General Public License as published
- *   by the Free Software Foundation, either version 3 of the License, or
- *   (at your option) any later version.
- *
- *   This program is distributed in the hope that it will be useful,
- *   but WITHOUT ANY WARRANTY; without even the implied warranty of
- *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- *   GNU Affero General Public License for more details.
- *
- *   You should have received a copy of the GNU Affero General Public License
- *   along with this program.  If not, see <https://www.gnu.org/licenses/>.
- */
 package org.cloud.sonic.agent.websockets;
 
 import jakarta.websocket.*;
 import jakarta.websocket.server.PathParam;
 import jakarta.websocket.server.ServerEndpoint;
+import lombok.extern.slf4j.Slf4j;
 import org.cloud.sonic.agent.common.config.WsEndpointConfigure;
 import org.cloud.sonic.agent.tools.BytesTool;
 import org.java_websocket.client.WebSocketClient;
@@ -33,30 +17,30 @@ import java.net.URI;
 import java.util.HashMap;
 import java.util.Map;
 
-/**
- * @author ZhouYiXun
- * @des
- * @date 2021/10/25 23:03
- */
+@Slf4j
 @Component
 @ServerEndpoint(value = "/websockets/webView/{key}/{port}/{id}", configurator = WsEndpointConfigure.class)
 public class WebViewWSServer {
-    private final Logger logger = LoggerFactory.getLogger(WebViewWSServer.class);
+
+    private static final String DEVICE = "DEVICE";
+    private static final String UDID = "UDID";
+
+    private static final String WEBSOCKET = "WEBSOCKET";
+    
     @Value("${sonic.agent.key}")
     private String key;
-    private Map<Session, WebSocketClient> sessionWebSocketClientMap = new HashMap<>();
 
     @OnOpen
     public void onOpen(Session session, @PathParam("key") String secretKey, @PathParam("port") int port, @PathParam("id") String id) throws Exception {
-        if (secretKey.length() == 0 || (!secretKey.equals(key))) {
-            logger.info("Auth Failed!");
+        if (secretKey.isEmpty() || (!secretKey.equals(key))) {
+            log.info("Auth Failed!");
             return;
         }
         URI uri = new URI("ws://localhost:" + port + "/devtools/page/" + id);
         WebSocketClient webSocketClient = new WebSocketClient(uri) {
             @Override
             public void onOpen(ServerHandshake serverHandshake) {
-                logger.info("Connected!");
+                log.info("Connected!");
             }
 
             @Override
@@ -66,7 +50,7 @@ public class WebViewWSServer {
 
             @Override
             public void onClose(int i, String s, boolean b) {
-                logger.info("Disconnected!");
+                log.info("Disconnected!");
             }
 
             @Override
@@ -75,14 +59,15 @@ public class WebViewWSServer {
             }
         };
         webSocketClient.connect();
-        sessionWebSocketClientMap.put(session, webSocketClient);
+        session.getUserProperties().put(WEBSOCKET, webSocketClient);
     }
 
     @OnMessage
-    public void onMessage(String message, Session session) throws InterruptedException {
-        if (sessionWebSocketClientMap.get(session) != null) {
+    public void onMessage(String message, Session session) {
+        var webSocketClient = (WebSocketClient) session.getUserProperties().get(WEBSOCKET);
+        if (webSocketClient != null) {
             try {
-                sessionWebSocketClientMap.get(session).send(message);
+                webSocketClient.send(message);
             } catch (Exception e) {
 
             }
@@ -91,12 +76,12 @@ public class WebViewWSServer {
 
     @OnClose
     public void onClose(Session session) {
-        sessionWebSocketClientMap.get(session).close();
-        sessionWebSocketClientMap.remove(session);
+        var webSocketClient = (WebSocketClient) session.getUserProperties().get(WEBSOCKET);
+        webSocketClient.close();
     }
 
     @OnError
     public void onError(Session session, Throwable error) {
-        logger.error(error.getMessage());
+        log.error(error.getMessage());
     }
 }

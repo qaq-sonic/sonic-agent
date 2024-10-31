@@ -30,16 +30,16 @@ import org.cloud.sonic.agent.common.config.WsEndpointConfigure;
 import org.cloud.sonic.agent.common.interfaces.DeviceStatus;
 import org.cloud.sonic.agent.common.maps.DevicesLockMap;
 import org.cloud.sonic.agent.common.maps.HandlerMap;
-import org.cloud.sonic.agent.common.maps.WebSocketSessionMap;
 import org.cloud.sonic.agent.common.models.HandleContext;
 import org.cloud.sonic.agent.components.AgentManagerTool;
 import org.cloud.sonic.agent.components.SGMTool;
+import org.cloud.sonic.agent.components.UploadTools;
 import org.cloud.sonic.agent.tests.TaskManager;
 import org.cloud.sonic.agent.tests.handlers.IOSStepHandler;
 import org.cloud.sonic.agent.tests.ios.IOSRunStepThread;
-import org.cloud.sonic.agent.tools.*;
+import org.cloud.sonic.agent.tools.BytesTool;
+import org.cloud.sonic.agent.tools.PortTool;
 import org.cloud.sonic.agent.tools.file.DownloadTool;
-import org.cloud.sonic.agent.components.UploadTools;
 import org.cloud.sonic.agent.transport.TransportWorker;
 import org.cloud.sonic.driver.common.enums.PasteboardType;
 import org.cloud.sonic.driver.common.tool.RespHandler;
@@ -58,7 +58,6 @@ import java.nio.charset.StandardCharsets;
 import java.util.Calendar;
 import java.util.HashMap;
 import java.util.Map;
-import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 
 import static org.cloud.sonic.agent.tools.BytesTool.sendText;
@@ -66,7 +65,10 @@ import static org.cloud.sonic.agent.tools.BytesTool.sendText;
 @Component
 @Slf4j
 @ServerEndpoint(value = "/websockets/ios/{key}/{udId}/{token}", configurator = WsEndpointConfigure.class)
-public class IOSWSServer implements IIOSWSServer {
+public class IOSWSServer {
+
+    private static final String DEVICE = "DEVICE";
+    private static final String UDID = "UDID";
 
     public static Map<String, Integer> screenMap = new HashMap<>();
     @Value("${sonic.agent.key}")
@@ -77,9 +79,11 @@ public class IOSWSServer implements IIOSWSServer {
     private AgentManagerTool agentManagerTool;
 
     @OnOpen
-    public void onOpen(Session session, @PathParam("key") String secretKey,
-                       @PathParam("udId") String udId, @PathParam("token") String token) throws Exception {
-        if (secretKey.length() == 0 || (!secretKey.equals(key)) || token.length() == 0) {
+    public void onOpen(Session session,
+                       @PathParam("key") String secretKey,
+                       @PathParam("udId") String udId,
+                       @PathParam("token") String token) throws Exception {
+        if (secretKey.isEmpty() || (!secretKey.equals(key)) || token.isEmpty()) {
             log.info("Auth Failed!");
             return;
         }
@@ -97,10 +101,7 @@ public class IOSWSServer implements IIOSWSServer {
             return;
         }
 
-        session.getUserProperties().put("udId", udId);
-        session.getUserProperties().put("id", String.format("%s-%s", this.getClass().getSimpleName(), udId));
-        WebSocketSessionMap.addSession(session);
-        saveUdIdMapAndSet(session, udId);
+        session.getUserProperties().put(UDID, udId);
 
         // 更新使用用户
         JSONObject jsonDebug = new JSONObject();
@@ -109,24 +110,6 @@ public class IOSWSServer implements IIOSWSServer {
         jsonDebug.put("udId", udId);
         TransportWorker.send(jsonDebug);
 
-        session.getUserProperties().put("schedule", ScheduleTool.schedule(() -> {
-            log.info("time up!");
-            if (session.isOpen()) {
-                IOSStepHandler iosStepHandler = HandlerMap.getIOSMap().get(udId);
-                if (iosStepHandler != null) {
-                    try {
-                        iosStepHandler.getIOSDriver().pressButton("home");
-                    } catch (SonicRespException ignored) {
-                    }
-                }
-                JSONObject errMsg = new JSONObject();
-                errMsg.put("msg", "error");
-                BytesTool.sendText(session, errMsg.toJSONString());
-                exit(session);
-            }
-        }, BytesTool.remoteTimeout));
-
-        saveUdIdMapAndSet(session, udId);
         if (SibTool.getOrientation(udId) != 1) {
             SibTool.launch(udId, "com.apple.springboard");
         }
@@ -168,7 +151,7 @@ public class IOSWSServer implements IIOSWSServer {
 
     @OnClose
     public void onClose(Session session) {
-        String udId = (String) session.getUserProperties().get("udId");
+        var udId = (String) session.getUserProperties().get(UDID);
         try {
             exit(session);
         } finally {
@@ -188,8 +171,8 @@ public class IOSWSServer implements IIOSWSServer {
     @OnMessage
     public void onMessage(String message, Session session) {
         JSONObject msg = JSON.parseObject(message);
-        log.info("{} send: {}", session.getUserProperties().get("id").toString(), msg);
-        String udId = udIdMap.get(session);
+        var udId = (String) session.getUserProperties().get(UDID);
+        log.info("{} send: {}", udId, msg);
         IOSDeviceThreadPool.cachedThreadPool.execute(() -> {
             IOSDriver iosDriver = null;
             IOSStepHandler iosStepHandler = HandlerMap.getIOSMap().get(udId);
@@ -482,7 +465,7 @@ public class IOSWSServer implements IIOSWSServer {
                             jsonCheck.put("msg", "generateStep");
                             jsonCheck.put("key", key);
                             jsonCheck.put("udId", udId);
-                            jsonCheck.put("sessionId", session.getUserProperties().get("id").toString());
+                            jsonCheck.put("sessionId", session.getUserProperties().get(UDID).toString());
                             jsonCheck.put("element", msg.getString("element"));
                             jsonCheck.put("eleType", msg.getString("eleType"));
                             jsonCheck.put("pf", 2);
@@ -495,35 +478,30 @@ public class IOSWSServer implements IIOSWSServer {
     }
 
     private void exit(Session session) {
-        synchronized (session) {
-            ScheduledFuture<?> future = (ScheduledFuture<?>) session.getUserProperties().get("schedule");
-            future.cancel(true);
-            String udId = udIdMap.get(session);
-            screenMap.remove(udId);
-            SibTool.stopOrientationWatcher(udId);
-            try {
-                IOSStepHandler iosStepHandler = HandlerMap.getIOSMap().get(udId);
-                if (iosStepHandler != null) {
-                    iosStepHandler.closeIOSDriver();
-                }
-            } catch (Exception e) {
-                log.info("close driver failed.");
-            } finally {
-                HandlerMap.getIOSMap().remove(udId);
+        var udId = (String) session.getUserProperties().get(UDID);
+        screenMap.remove(udId);
+        SibTool.stopOrientationWatcher(udId);
+        try {
+            IOSStepHandler iosStepHandler = HandlerMap.getIOSMap().get(udId);
+            if (iosStepHandler != null) {
+                iosStepHandler.closeIOSDriver();
             }
-            SibTool.stopWebInspector(udId);
-            SibTool.stopPerfmon(udId);
-            SibTool.stopShare(udId);
-            SGMTool.stopProxy(udId);
-            IOSDeviceLocalStatus.finish(session.getUserProperties().get("udId") + "");
-            WebSocketSessionMap.removeSession(session);
-            removeUdIdMapAndSet(session);
-            try {
-                session.close();
-            } catch (IOException e) {
-                e.printStackTrace();
-            }
-            log.info("{} : quit.", session.getUserProperties().get("id").toString());
+        } catch (Exception e) {
+            log.info("close driver failed.");
+        } finally {
+            HandlerMap.getIOSMap().remove(udId);
         }
+        SibTool.stopWebInspector(udId);
+        SibTool.stopPerfmon(udId);
+        SibTool.stopShare(udId);
+        SGMTool.stopProxy(udId);
+        IOSDeviceLocalStatus.finish(udId);
+        try {
+            session.close();
+        } catch (IOException e) {
+            log.error("IOException", e);
+        }
+        log.info("{} : quit.", udId);
+
     }
 }

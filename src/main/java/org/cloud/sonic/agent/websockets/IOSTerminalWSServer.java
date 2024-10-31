@@ -1,20 +1,3 @@
-/*
- *   sonic-agent  Agent of Sonic Cloud Real Machine Platform.
- *   Copyright (C) 2022 SonicCloudOrg
- *
- *   This program is free software: you can redistribute it and/or modify
- *   it under the terms of the GNU Affero General Public License as published
- *   by the Free Software Foundation, either version 3 of the License, or
- *   (at your option) any later version.
- *
- *   This program is distributed in the hope that it will be useful,
- *   but WITHOUT ANY WARRANTY; without even the implied warranty of
- *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- *   GNU Affero General Public License for more details.
- *
- *   You should have received a copy of the GNU Affero General Public License
- *   along with this program.  If not, see <https://www.gnu.org/licenses/>.
- */
 package org.cloud.sonic.agent.websockets;
 
 import com.alibaba.fastjson.JSON;
@@ -25,28 +8,30 @@ import jakarta.websocket.server.ServerEndpoint;
 import lombok.extern.slf4j.Slf4j;
 import org.cloud.sonic.agent.bridge.ios.SibTool;
 import org.cloud.sonic.agent.common.config.WsEndpointConfigure;
-import org.cloud.sonic.agent.common.maps.WebSocketSessionMap;
-import org.cloud.sonic.agent.tools.BytesTool;
-import org.cloud.sonic.agent.tools.ScheduleTool;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 import java.io.IOException;
-import java.util.concurrent.ScheduledFuture;
 
 import static org.cloud.sonic.agent.tools.BytesTool.sendText;
 
-@Component
 @Slf4j
+@Component
 @ServerEndpoint(value = "/websockets/ios/terminal/{key}/{udId}/{token}", configurator = WsEndpointConfigure.class)
-public class IOSTerminalWSServer implements IIOSWSServer {
+public class IOSTerminalWSServer {
+
+    private static final String DEVICE = "DEVICE";
+    private static final String UDID = "UDID";
+
     @Value("${sonic.agent.key}")
     private String key;
 
     @OnOpen
-    public void onOpen(Session session, @PathParam("key") String secretKey,
-                       @PathParam("udId") String udId, @PathParam("token") String token) throws Exception {
-        if (secretKey.length() == 0 || (!secretKey.equals(key)) || token.length() == 0) {
+    public void onOpen(Session session,
+                       @PathParam("key") String secretKey,
+                       @PathParam("udId") String udId,
+                       @PathParam("token") String token) {
+        if (secretKey.isEmpty() || (!secretKey.equals(key)) || token.isEmpty()) {
             log.info("Auth Failed!");
             return;
         }
@@ -56,31 +41,18 @@ public class IOSTerminalWSServer implements IIOSWSServer {
             return;
         }
 
-        session.getUserProperties().put("udId", udId);
-        session.getUserProperties().put("id", String.format("%s-%s", this.getClass().getSimpleName(), udId));
-        WebSocketSessionMap.addSession(session);
-        saveUdIdMapAndSet(session, udId);
+        session.getUserProperties().put(UDID, udId);
 
         JSONObject ter = new JSONObject();
         ter.put("msg", "terminal");
         sendText(session, ter.toJSONString());
-
-        session.getUserProperties().put("schedule", ScheduleTool.schedule(() -> {
-            log.info("time up!");
-            if (session.isOpen()) {
-                JSONObject errMsg = new JSONObject();
-                errMsg.put("msg", "error");
-                BytesTool.sendText(session, errMsg.toJSONString());
-                exit(session);
-            }
-        }, BytesTool.remoteTimeout));
     }
 
     @OnMessage
     public void onMessage(String message, Session session) throws InterruptedException {
         JSONObject msg = JSON.parseObject(message);
-        log.info("{} send: {}", session.getUserProperties().get("id").toString(), msg);
-        String udId = udIdMap.get(session);
+        var udId = (String) session.getUserProperties().get(UDID);
+        log.info("{} send: {}", udId, msg);
         switch (msg.getString("type")) {
             case "processList" -> SibTool.getProcessList(udId, session);
             case "appList" -> SibTool.getAppList(udId, session);
@@ -103,20 +75,16 @@ public class IOSTerminalWSServer implements IIOSWSServer {
     }
 
     private void exit(Session session) {
-        synchronized (session) {
-            ScheduledFuture<?> future = (ScheduledFuture<?>) session.getUserProperties().get("schedule");
-            future.cancel(true);
-            if (udIdMap.get(session) != null) {
-                SibTool.stopSysLog(udIdMap.get(session));
-            }
-            WebSocketSessionMap.removeSession(session);
-            removeUdIdMapAndSet(session);
-            try {
-                session.close();
-            } catch (IOException e) {
-                e.printStackTrace();
-            }
-            log.info("{} : quit.", session.getUserProperties().get("id").toString());
+        var udId = (String) session.getUserProperties().get(UDID);
+        if (udId != null) {
+            SibTool.stopSysLog(udId);
         }
+        try {
+            session.close();
+        } catch (IOException e) {
+            log.error("IOException", e);
+        }
+        log.info("{} : quit.", udId);
+
     }
 }

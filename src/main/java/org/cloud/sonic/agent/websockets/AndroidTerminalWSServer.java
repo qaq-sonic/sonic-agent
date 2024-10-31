@@ -28,24 +28,23 @@ import java.util.concurrent.TimeUnit;
 @Slf4j
 @Component
 @ServerEndpoint(value = "/websockets/android/terminal/{key}/{udId}/{token}", configurator = WsEndpointConfigure.class)
-public class AndroidTerminalWSServer implements IAndroidWSServer {
+public class AndroidTerminalWSServer {
+
+    private static final String DEVICE = "DEVICE";
+    private static final String UDID = "UDID";
 
     private static final String[] blackCommandList = {"reboot", "rm", "su "};
     private static final String TERMINAL_FUTURE = "TERMINAL_FUTURE";
     private static final String LOGCAT_FUTURE = "LOGCAT_FUTURE";
     private static final String SOCKET_THREAD = "SOCKET";
     private static final String OUTPUT_STREAM = "OUTPUT_STREAM";
-    private static final String DEVICE = "DEVICE";
-    private static final String UDID = "UDID";
+
 
     @Value("${sonic.agent.key}")
     private String key;
 
     @OnOpen
-    public void onOpen(Session session,
-                       @PathParam("key") String secretKey,
-                       @PathParam("udId") String udId,
-                       @PathParam("token") String token) throws Exception {
+    public void onOpen(Session session, @PathParam("key") String secretKey, @PathParam("udId") String udId, @PathParam("token") String token) throws Exception {
         if (secretKey.isEmpty() || (!secretKey.equals(key)) || token.isEmpty()) {
             log.info("Auth Failed!");
             return;
@@ -299,10 +298,7 @@ public class AndroidTerminalWSServer implements IAndroidWSServer {
         int managerPort = PortTool.getPort();
         AndroidDeviceBridgeTool.forward(iDevice, managerPort, 2334);
 
-        try (Socket managerSocket = new Socket("localhost", managerPort);
-             InputStream inputStream = managerSocket.getInputStream();
-             OutputStream outputStream = managerSocket.getOutputStream();
-             BufferedReader br = new BufferedReader(new InputStreamReader(inputStream))) {
+        try (Socket managerSocket = new Socket("localhost", managerPort); InputStream inputStream = managerSocket.getInputStream(); OutputStream outputStream = managerSocket.getOutputStream(); BufferedReader br = new BufferedReader(new InputStreamReader(inputStream))) {
             session.getUserProperties().put(OUTPUT_STREAM, outputStream);
             String s;
             while (managerSocket.isConnected() && !Thread.interrupted()) {

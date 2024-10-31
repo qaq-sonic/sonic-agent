@@ -12,7 +12,6 @@ import org.cloud.sonic.agent.common.config.WsEndpointConfigure;
 import org.cloud.sonic.agent.common.maps.AndroidAPKMap;
 import org.cloud.sonic.agent.common.maps.AndroidDeviceManagerMap;
 import org.cloud.sonic.agent.common.maps.ScreenMap;
-import org.cloud.sonic.agent.common.maps.WebSocketSessionMap;
 import org.cloud.sonic.agent.tests.android.minicap.MiniCapUtil;
 import org.cloud.sonic.agent.tests.android.scrcpy.ScrcpyServerUtil;
 import org.cloud.sonic.agent.tests.handlers.AndroidMonitorHandler;
@@ -21,26 +20,26 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 import java.io.IOException;
-import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicReference;
 
 @Component
 @Slf4j
 @ServerEndpoint(value = "/websockets/android/screen/{key}/{udId}/{token}", configurator = WsEndpointConfigure.class)
-public class AndroidScreenWSServer implements IAndroidWSServer {
+public class AndroidScreenWSServer {
+
+    private static final String DEVICE = "DEVICE";
+    private static final String UDID = "UDID";
+
+    private static final String VIDEO_SETTING = "VIDEO_SETTING";
+    private static final String PIC_SETTING = "PIC_SETTING";
+
     @Value("${sonic.agent.key}")
     private String key;
-    private Map<String, String> typeMap = new ConcurrentHashMap<>();
-    private Map<String, String> picMap = new ConcurrentHashMap<>();
 
     private final AndroidMonitorHandler androidMonitorHandler = new AndroidMonitorHandler();
 
     @OnOpen
-    public void onOpen(Session session,
-                       @PathParam("key") String secretKey,
-                       @PathParam("udId") String udId,
-                       @PathParam("token") String token) throws Exception {
+    public void onOpen(Session session, @PathParam("key") String secretKey, @PathParam("udId") String udId, @PathParam("token") String token) throws Exception {
         if (secretKey.isEmpty() || (!secretKey.equals(key)) || token.isEmpty()) {
             log.info("Auth Failed!");
             return;
@@ -52,10 +51,8 @@ public class AndroidScreenWSServer implements IAndroidWSServer {
         }
         AndroidDeviceBridgeTool.screen(iDevice, "abort");
 
-        session.getUserProperties().put("udId", udId);
-        session.getUserProperties().put("id", String.format("%s-%s", this.getClass().getSimpleName(), udId));
-        WebSocketSessionMap.addSession(session);
-        saveUdIdMapAndSet(session, iDevice);
+        session.getUserProperties().put(UDID, udId);
+        session.getUserProperties().put(DEVICE, iDevice);
 
         int wait = 0;
         boolean isInstall = true;
@@ -89,13 +86,13 @@ public class AndroidScreenWSServer implements IAndroidWSServer {
     @OnMessage
     public void onMessage(String message, Session session) {
         JSONObject msg = JSON.parseObject(message);
-        String udId = session.getUserProperties().get("udId").toString();
+        String udId = session.getUserProperties().get(UDID).toString();
         log.info("{} send: {}", udId, msg);
         var msgType = msg.getString("type");
         switch (msgType) {
             case "switch" -> {
-                typeMap.put(udId, msg.getString("detail"));
-                IDevice iDevice = udIdMap.get(session);
+                session.getUserProperties().put(VIDEO_SETTING, msg.getString("detail"));
+                var iDevice = (IDevice) session.getUserProperties().get(DEVICE);
                 if (!androidMonitorHandler.isMonitorRunning(iDevice)) {
                     androidMonitorHandler.startMonitor(iDevice, res -> {
                         JSONObject rotationJson = new JSONObject();
@@ -109,14 +106,14 @@ public class AndroidScreenWSServer implements IAndroidWSServer {
                 }
             }
             case "pic" -> {
-                picMap.put(udId, msg.getString("detail"));
+                session.getUserProperties().put(PIC_SETTING, msg.getString("detail"));
                 startScreen(session);
             }
         }
     }
 
     private void startScreen(Session session) {
-        IDevice iDevice = udIdMap.get(session);
+        var iDevice = (IDevice) session.getUserProperties().get(DEVICE);
         if (iDevice != null) {
             Thread old = ScreenMap.getMap().get(session);
             if (old != null) {
@@ -125,13 +122,12 @@ public class AndroidScreenWSServer implements IAndroidWSServer {
                     try {
                         Thread.sleep(1000);
                     } catch (InterruptedException e) {
-                        e.printStackTrace();
+                        log.error("InterruptedException", e);
                     }
-                }
-                while (ScreenMap.getMap().get(session) != null);
+                } while (ScreenMap.getMap().get(session) != null);
             }
-            typeMap.putIfAbsent(iDevice.getSerialNumber(), "scrcpy");
-            switch (typeMap.get(iDevice.getSerialNumber())) {
+            session.getUserProperties().putIfAbsent(VIDEO_SETTING, "scrcpy");
+            switch ((String) session.getUserProperties().get(VIDEO_SETTING)) {
                 case "scrcpy" -> {
                     ScrcpyServerUtil scrcpyServerUtil = new ScrcpyServerUtil();
                     Thread scrcpyThread = scrcpyServerUtil.start(iDevice.getSerialNumber(), AndroidDeviceManagerMap.getRotationMap().get(iDevice.getSerialNumber()), session);
@@ -140,11 +136,7 @@ public class AndroidScreenWSServer implements IAndroidWSServer {
                 case "minicap" -> {
                     MiniCapUtil miniCapUtil = new MiniCapUtil();
                     AtomicReference<String[]> banner = new AtomicReference<>(new String[24]);
-                    Thread miniCapThread = miniCapUtil.start(
-                            iDevice.getSerialNumber(), banner, null,
-                            picMap.get(iDevice.getSerialNumber()) == null ? "high" : picMap.get(iDevice.getSerialNumber()),
-                            AndroidDeviceManagerMap.getRotationMap().get(iDevice.getSerialNumber()), session
-                    );
+                    Thread miniCapThread = miniCapUtil.start(iDevice.getSerialNumber(), banner, null, session.getUserProperties().get(PIC_SETTING) == null ? "high" : (String) session.getUserProperties().get(PIC_SETTING), AndroidDeviceManagerMap.getRotationMap().get(iDevice.getSerialNumber()), session);
                     ScreenMap.getMap().put(session, miniCapThread);
                 }
             }
@@ -155,23 +147,18 @@ public class AndroidScreenWSServer implements IAndroidWSServer {
     }
 
     private void exit(Session session) {
-        synchronized (session) {
-            String udId = session.getUserProperties().get("udId").toString();
-            androidMonitorHandler.stopMonitor(udIdMap.get(session));
-            WebSocketSessionMap.removeSession(session);
-            removeUdIdMapAndSet(session);
-            AndroidDeviceManagerMap.getRotationMap().remove(udId);
-            if (ScreenMap.getMap().get(session) != null) {
-                ScreenMap.getMap().get(session).interrupt();
-            }
-            typeMap.remove(udId);
-            picMap.remove(udId);
-            try {
-                session.close();
-            } catch (IOException e) {
-                e.printStackTrace();
-            }
-            log.info("{} : quit.", session.getUserProperties().get("id").toString());
+        var udId = session.getUserProperties().get(UDID).toString();
+        var iDevice = (IDevice) session.getUserProperties().get(DEVICE);
+        androidMonitorHandler.stopMonitor(iDevice);
+        AndroidDeviceManagerMap.getRotationMap().remove(udId);
+        if (ScreenMap.getMap().get(session) != null) {
+            ScreenMap.getMap().get(session).interrupt();
         }
+        try {
+            session.close();
+        } catch (IOException e) {
+            log.error("IOException", e);
+        }
+        log.info("{} : quit.", session.getUserProperties().get("id").toString());
     }
 }

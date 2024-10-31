@@ -1,23 +1,5 @@
-/*
- *   sonic-agent  Agent of Sonic Cloud Real Machine Platform.
- *   Copyright (C) 2022 SonicCloudOrg
- *
- *   This program is free software: you can redistribute it and/or modify
- *   it under the terms of the GNU Affero General Public License as published
- *   by the Free Software Foundation, either version 3 of the License, or
- *   (at your option) any later version.
- *
- *   This program is distributed in the hope that it will be useful,
- *   but WITHOUT ANY WARRANTY; without even the implied warranty of
- *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- *   GNU Affero General Public License for more details.
- *
- *   You should have received a copy of the GNU Affero General Public License
- *   along with this program.  If not, see <https://www.gnu.org/licenses/>.
- */
 package org.cloud.sonic.agent.websockets;
 
-import com.alibaba.fastjson.JSONObject;
 import jakarta.websocket.OnClose;
 import jakarta.websocket.OnError;
 import jakarta.websocket.OnOpen;
@@ -27,10 +9,7 @@ import jakarta.websocket.server.ServerEndpoint;
 import lombok.extern.slf4j.Slf4j;
 import org.cloud.sonic.agent.bridge.ios.SibTool;
 import org.cloud.sonic.agent.common.config.WsEndpointConfigure;
-import org.cloud.sonic.agent.common.maps.WebSocketSessionMap;
 import org.cloud.sonic.agent.tests.ios.mjpeg.MjpegInputStream;
-import org.cloud.sonic.agent.tools.BytesTool;
-import org.cloud.sonic.agent.tools.ScheduleTool;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
@@ -38,23 +17,28 @@ import java.io.IOException;
 import java.net.MalformedURLException;
 import java.net.URL;
 import java.nio.ByteBuffer;
-import java.util.concurrent.ScheduledFuture;
 
 import static org.cloud.sonic.agent.tools.BytesTool.sendByte;
 
 @Component
 @Slf4j
 @ServerEndpoint(value = "/websockets/ios/screen/{key}/{udId}/{token}", configurator = WsEndpointConfigure.class)
-public class IOSScreenWSServer implements IIOSWSServer {
+public class IOSScreenWSServer {
+
+    private static final String DEVICE = "DEVICE";
+    private static final String UDID = "UDID";
+
     @Value("${sonic.agent.key}")
     private String key;
     @Value("${server.port}")
     private int port;
 
     @OnOpen
-    public void onOpen(Session session, @PathParam("key") String secretKey,
-                       @PathParam("udId") String udId, @PathParam("token") String token) throws InterruptedException {
-        if (secretKey.length() == 0 || (!secretKey.equals(key)) || token.length() == 0) {
+    public void onOpen(Session session,
+                       @PathParam("key") String secretKey,
+                       @PathParam("udId") String udId,
+                       @PathParam("token") String token) throws InterruptedException {
+        if (secretKey.isEmpty() || (!secretKey.equals(key)) || token.isEmpty()) {
             log.info("Auth Failed!");
             return;
         }
@@ -64,10 +48,7 @@ public class IOSScreenWSServer implements IIOSWSServer {
             return;
         }
 
-        session.getUserProperties().put("udId", udId);
-        session.getUserProperties().put("id", String.format("%s-%s", this.getClass().getSimpleName(), udId));
-        WebSocketSessionMap.addSession(session);
-        saveUdIdMapAndSet(session, udId);
+        session.getUserProperties().put(UDID, udId);
 
         int screenPort = 0;
         int wait = 0;
@@ -134,16 +115,6 @@ public class IOSScreenWSServer implements IIOSWSServer {
             }
             log.info("screen done.");
         }).start();
-
-        session.getUserProperties().put("schedule", ScheduleTool.schedule(() -> {
-            log.info("time up!");
-            if (session.isOpen()) {
-                JSONObject errMsg = new JSONObject();
-                errMsg.put("msg", "error");
-                BytesTool.sendText(session, errMsg.toJSONString());
-                exit(session);
-            }
-        }, BytesTool.remoteTimeout));
     }
 
     @OnClose
@@ -157,17 +128,11 @@ public class IOSScreenWSServer implements IIOSWSServer {
     }
 
     private void exit(Session session) {
-        synchronized (session) {
-            ScheduledFuture<?> future = (ScheduledFuture<?>) session.getUserProperties().get("schedule");
-            future.cancel(true);
-            WebSocketSessionMap.removeSession(session);
-            removeUdIdMapAndSet(session);
-            try {
-                session.close();
-            } catch (IOException e) {
-                e.printStackTrace();
-            }
-            log.info("{} : quit.", session.getUserProperties().get("id").toString());
+        try {
+            session.close();
+        } catch (IOException e) {
+            log.error("IOException", e);
         }
+        log.info("{} : quit.", session.getUserProperties().get("id").toString());
     }
 }
