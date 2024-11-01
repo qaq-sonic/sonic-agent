@@ -23,6 +23,7 @@ import com.alibaba.fastjson.JSONException;
 import com.alibaba.fastjson.JSONObject;
 import jakarta.annotation.PostConstruct;
 import jakarta.websocket.Session;
+import lombok.extern.slf4j.Slf4j;
 import org.cloud.sonic.agent.common.interfaces.DeviceStatus;
 import org.cloud.sonic.agent.common.interfaces.PlatformType;
 import org.cloud.sonic.agent.common.maps.*;
@@ -33,16 +34,10 @@ import org.cloud.sonic.agent.tools.PortTool;
 import org.cloud.sonic.agent.tools.ProcessCommandTool;
 import org.cloud.sonic.agent.tools.ScheduleTool;
 import org.cloud.sonic.agent.transport.TransportWorker;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.ApplicationListener;
-import org.springframework.context.annotation.Bean;
-import org.springframework.context.annotation.DependsOn;
 import org.springframework.context.event.ContextRefreshedEvent;
-import org.springframework.core.Ordered;
-import org.springframework.core.annotation.Order;
 import org.springframework.http.*;
 import org.springframework.lang.NonNull;
 import org.springframework.stereotype.Component;
@@ -63,11 +58,9 @@ import java.util.stream.Collectors;
 
 import static org.cloud.sonic.agent.tools.BytesTool.sendText;
 
-@DependsOn({"iOSThreadPoolInit"})
+@Slf4j
 @Component
-@Order(value = Ordered.HIGHEST_PRECEDENCE)
 public class SibTool implements ApplicationListener<ContextRefreshedEvent> {
-    private static final Logger logger = LoggerFactory.getLogger(SibTool.class);
     @Value("${modules.ios.wda-bundle-id}")
     private String getBundleId;
 
@@ -93,12 +86,12 @@ public class SibTool implements ApplicationListener<ContextRefreshedEvent> {
     @Override
     public void onApplicationEvent(@NonNull ContextRefreshedEvent event) {
         init();
-        logger.info("Enable iOS Module");
+        log.info("Enable iOS Module");
     }
 
     public void init() {
         restTemplate = restTemplateBean;
-        IOSDeviceThreadPool.cachedThreadPool.execute(() -> {
+        Thread.startVirtualThread(() -> {
             String processName = "sib";
             if (GlobalProcessMap.getMap().get(processName) != null) {
                 Process ps = GlobalProcessMap.getMap().get(processName);
@@ -127,7 +120,7 @@ public class SibTool implements ApplicationListener<ContextRefreshedEvent> {
                     if ((s = stdInput.readLine()) == null)
                         break;
                 } catch (IOException e) {
-                    logger.info(e.getMessage());
+                    log.info(e.getMessage());
                     break;
                 }
                 JSONObject r = JSONObject.parseObject(s);
@@ -136,7 +129,7 @@ public class SibTool implements ApplicationListener<ContextRefreshedEvent> {
                 } else if (r.getString("status").equals("offline")) {
                     sendDisConnectStatus(r);
                 }
-                logger.info(s);
+                log.info(s);
             }
             try {
                 stdInput.close();
@@ -148,7 +141,7 @@ public class SibTool implements ApplicationListener<ContextRefreshedEvent> {
             } catch (IOException e) {
                 e.printStackTrace();
             }
-            logger.info("listen done.");
+            log.info("listen done.");
             GlobalProcessMap.getMap().put(processName, listenProcess);
         });
 
@@ -158,7 +151,7 @@ public class SibTool implements ApplicationListener<ContextRefreshedEvent> {
                 IOSBatteryThread.DELAY,
                 IOSBatteryThread.TIME_UNIT);
 
-        logger.info("iOS devices listening...");
+        log.info("iOS devices listening...");
     }
 
     public static List<String> getDeviceList() {
@@ -183,7 +176,7 @@ public class SibTool implements ApplicationListener<ContextRefreshedEvent> {
             deviceStatus.put("udId", jsonObject.getString("serialNumber"));
             deviceStatus.put("status", DeviceStatus.DISCONNECTED);
             deviceStatus.put("platform", PlatformType.IOS);
-            logger.info("iOS devices: " + jsonObject.getString("serialNumber") + " OFFLINE!");
+            log.info("iOS devices: " + jsonObject.getString("serialNumber") + " OFFLINE!");
             TransportWorker.send(deviceStatus);
             IOSDeviceManagerMap.getMap().remove(jsonObject.getString("serialNumber"));
             DevicesBatteryMap.getTempMap().remove(jsonObject.getString("serialNumber"));
@@ -205,7 +198,7 @@ public class SibTool implements ApplicationListener<ContextRefreshedEvent> {
             deviceStatus.put("size", getSize(jsonObject.getString("serialNumber")));
             deviceStatus.put("cpu", detail.getString("cpuArchitecture"));
             deviceStatus.put("manufacturer", "APPLE");
-            logger.info("iOS Devices: " + jsonObject.getString("serialNumber") + " ONLINE!");
+            log.info("iOS Devices: " + jsonObject.getString("serialNumber") + " ONLINE!");
             TransportWorker.send(deviceStatus);
             IOSInfoMap.getDetailMap().put(jsonObject.getString("serialNumber"), detail);
             IOSDeviceManagerMap.getMap().remove(jsonObject.getString("serialNumber"));
@@ -273,10 +266,10 @@ public class SibTool implements ApplicationListener<ContextRefreshedEvent> {
                     if ((s = stdInput.readLine()) == null)
                         break;
                 } catch (IOException e) {
-                    logger.info(e.getMessage());
+                    log.info(e.getMessage());
                     break;
                 }
-                logger.info(s);
+                log.info(s);
                 if (s.contains("ServerURLHere->")) {
                     if (SibTool.isUpperThanIos17(udId)) {
                         try {
@@ -284,7 +277,7 @@ public class SibTool implements ApplicationListener<ContextRefreshedEvent> {
                                     new String[]{"sh", "-c", String.format("iproxy -u %s %d:8100 %d:9100 -s 0.0.0.0",
                                             udId, finalWdaPort, finalMjpegPort)});
                         } catch (IOException e) {
-                            logger.info(e.getMessage());
+                            log.info(e.getMessage());
                         }
                     }
                     try {
@@ -305,7 +298,7 @@ public class SibTool implements ApplicationListener<ContextRefreshedEvent> {
             } catch (IOException e) {
                 e.printStackTrace();
             }
-            logger.info("WebDriverAgent print thread shutdown.");
+            log.info("WebDriverAgent print thread shutdown.");
         });
         wdaThread.start();
         int wait = 0;
@@ -313,7 +306,7 @@ public class SibTool implements ApplicationListener<ContextRefreshedEvent> {
             Thread.sleep(500);
             wait++;
             if (wait >= 120) {
-                logger.info(udId + " WebDriverAgent start timeout!");
+                log.info(udId + " WebDriverAgent start timeout!");
                 return new int[]{0, 0};
             }
         }
@@ -383,10 +376,10 @@ public class SibTool implements ApplicationListener<ContextRefreshedEvent> {
                     if ((s = stdInput.readLine()) == null)
                         break;
                 } catch (IOException e) {
-                    logger.info(e.getMessage());
+                    log.info(e.getMessage());
                     break;
                 }
-                logger.info(s);
+                log.info(s);
                 JSONObject appList = new JSONObject();
                 appList.put("msg", "logDetail");
                 appList.put("detail", s);
@@ -402,7 +395,7 @@ public class SibTool implements ApplicationListener<ContextRefreshedEvent> {
             } catch (IOException e) {
                 e.printStackTrace();
             }
-            logger.info("sys done.");
+            log.info("sys done.");
         }).start();
     }
 
@@ -439,10 +432,10 @@ public class SibTool implements ApplicationListener<ContextRefreshedEvent> {
                     if ((s = stdInput.readLine()) == null)
                         break;
                 } catch (IOException e) {
-                    logger.info(e.getMessage());
+                    log.info(e.getMessage());
                     break;
                 }
-                logger.info(s);
+                log.info(s);
                 if (s.contains("orientation") && (!s.contains("0")) && (!s.contains("failed"))) {
                     int result = switch (BytesTool.getInt(s)) {
                         case 2 -> 180;
@@ -466,7 +459,7 @@ public class SibTool implements ApplicationListener<ContextRefreshedEvent> {
             } catch (IOException e) {
                 e.printStackTrace();
             }
-            logger.info("orientation watcher done.");
+            log.info("orientation watcher done.");
         }).start();
     }
 
@@ -498,7 +491,7 @@ public class SibTool implements ApplicationListener<ContextRefreshedEvent> {
                 if (StringUtils.isEmpty(s = stdInput.readLine()))
                     break;
             } catch (IOException e) {
-                logger.info(e.getMessage());
+                log.info(e.getMessage());
                 break;
             }
             try {
@@ -512,7 +505,7 @@ public class SibTool implements ApplicationListener<ContextRefreshedEvent> {
                     result.add(appInfo);
                 }
             } catch (JSONException e) {
-                logger.info(e.fillInStackTrace().toString());
+                log.info(e.fillInStackTrace().toString());
             }
         }
         try {
@@ -525,7 +518,7 @@ public class SibTool implements ApplicationListener<ContextRefreshedEvent> {
         } catch (IOException e) {
             e.printStackTrace();
         }
-        logger.info("app list done.");
+        log.info("app list done.");
         return result;
     }
 
@@ -552,7 +545,7 @@ public class SibTool implements ApplicationListener<ContextRefreshedEvent> {
                 if ((s = stdInput.readLine()) == null)
                     break;
             } catch (IOException e) {
-                logger.info(e.getMessage());
+                log.info(e.getMessage());
                 break;
             }
             List<JSONObject> pList = JSON.parseArray(s, JSONObject.class);
@@ -573,7 +566,7 @@ public class SibTool implements ApplicationListener<ContextRefreshedEvent> {
         } catch (IOException e) {
             e.printStackTrace();
         }
-        logger.info("process done.");
+        log.info("process done.");
     }
 
     public static void locationUnset(String udId) {
@@ -655,11 +648,11 @@ public class SibTool implements ApplicationListener<ContextRefreshedEvent> {
                     if ((s = stdInputErr.readLine()) == null)
                         break;
                 } catch (IOException e) {
-                    logger.info(e.getMessage());
+                    log.info(e.getMessage());
                     break;
                 }
                 if (!s.equals("close send protocol")) {
-                    logger.info(s);
+                    log.info(s);
                 }
             }
             try {
@@ -672,7 +665,7 @@ public class SibTool implements ApplicationListener<ContextRefreshedEvent> {
             } catch (IOException e) {
                 e.printStackTrace();
             }
-            logger.info("WebInspector print thread shutdown.");
+            log.info("WebInspector print thread shutdown.");
         });
         webErr.start();
         Thread web = new Thread(() -> {
@@ -682,10 +675,10 @@ public class SibTool implements ApplicationListener<ContextRefreshedEvent> {
                     if ((s = stdInput.readLine()) == null)
                         break;
                 } catch (IOException e) {
-                    logger.info(e.getMessage());
+                    log.info(e.getMessage());
                     break;
                 }
-                logger.info(s);
+                log.info(s);
                 if (s.contains("service started successfully")) {
                     isFinish.release();
                 }
@@ -701,7 +694,7 @@ public class SibTool implements ApplicationListener<ContextRefreshedEvent> {
                 e.printStackTrace();
             }
             webViewMap.remove(udId);
-            logger.info("WebInspector print thread shutdown.");
+            log.info("WebInspector print thread shutdown.");
         });
         web.start();
         int wait = 0;
@@ -713,7 +706,7 @@ public class SibTool implements ApplicationListener<ContextRefreshedEvent> {
             }
             wait++;
             if (wait >= 120) {
-                logger.info(udId + " WebInspector start timeout!");
+                log.info(udId + " WebInspector start timeout!");
                 return 0;
             }
         }
@@ -758,10 +751,10 @@ public class SibTool implements ApplicationListener<ContextRefreshedEvent> {
                     if ((s = stdInputErr.readLine()) == null)
                         break;
                 } catch (IOException e) {
-                    logger.info(e.getMessage());
+                    log.info(e.getMessage());
                     break;
                 }
-                logger.info(s);
+                log.info(s);
             }
             try {
                 stdInputErr.close();
@@ -773,7 +766,7 @@ public class SibTool implements ApplicationListener<ContextRefreshedEvent> {
             } catch (IOException e) {
                 e.printStackTrace();
             }
-            logger.info("proxy print thread shutdown.");
+            log.info("proxy print thread shutdown.");
         });
         proErr.start();
         Thread pro = new Thread(() -> {
@@ -783,10 +776,10 @@ public class SibTool implements ApplicationListener<ContextRefreshedEvent> {
                     if ((s = stdInput.readLine()) == null)
                         break;
                 } catch (IOException e) {
-                    logger.info(e.getMessage());
+                    log.info(e.getMessage());
                     break;
                 }
-                logger.info(s);
+                log.info(s);
             }
             try {
                 stdInput.close();
@@ -798,7 +791,7 @@ public class SibTool implements ApplicationListener<ContextRefreshedEvent> {
             } catch (IOException e) {
                 e.printStackTrace();
             }
-            logger.info("proxy print thread shutdown.");
+            log.info("proxy print thread shutdown.");
         });
         pro.start();
         String processName = String.format("process-%s-proxy-%d", udId, target);
@@ -837,7 +830,7 @@ public class SibTool implements ApplicationListener<ContextRefreshedEvent> {
     public static void mount(String udId) {
         String commandLine = "%s mount -u %s";
         String re = ProcessCommandTool.getProcessLocalCommandStr(String.format(commandLine, sib, udId));
-        logger.info(re);
+        log.info(re);
     }
 
     public static List<JSONObject> getWebView(String udId) {
@@ -900,10 +893,10 @@ public class SibTool implements ApplicationListener<ContextRefreshedEvent> {
                     if ((s = stdInputErr.readLine()) == null)
                         break;
                 } catch (IOException e) {
-                    logger.info(e.getMessage());
+                    log.info(e.getMessage());
                     break;
                 }
-                logger.info(s);
+                log.info(s);
             }
             try {
                 stdInputErr.close();
@@ -915,7 +908,7 @@ public class SibTool implements ApplicationListener<ContextRefreshedEvent> {
             } catch (IOException e) {
                 e.printStackTrace();
             }
-            logger.info("perfmon print thread shutdown.");
+            log.info("perfmon print thread shutdown.");
         });
         psErr.start();
         Thread pro = new Thread(() -> {
@@ -925,7 +918,7 @@ public class SibTool implements ApplicationListener<ContextRefreshedEvent> {
                     if ((s = stdInput.readLine()) == null)
                         break;
                 } catch (IOException e) {
-                    logger.info(e.getMessage());
+                    log.info(e.getMessage());
                     break;
                 }
                 try {
@@ -952,7 +945,7 @@ public class SibTool implements ApplicationListener<ContextRefreshedEvent> {
             } catch (IOException e) {
                 e.printStackTrace();
             }
-            logger.info("perfmon print thread shutdown.");
+            log.info("perfmon print thread shutdown.");
         });
         pro.start();
         String processName = String.format("process-%s-perfmon", udId);

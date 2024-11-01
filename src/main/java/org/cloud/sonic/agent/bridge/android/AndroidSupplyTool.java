@@ -25,30 +25,21 @@ import org.cloud.sonic.agent.common.maps.GlobalProcessMap;
 import org.cloud.sonic.agent.tests.LogUtil;
 import org.cloud.sonic.agent.tools.BytesTool;
 import org.cloud.sonic.agent.tools.PortTool;
-import org.springframework.context.ApplicationListener;
-import org.springframework.context.event.ContextRefreshedEvent;
-import org.springframework.lang.NonNull;
-import org.springframework.stereotype.Component;
 
 import java.io.BufferedReader;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStreamReader;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 
 @Slf4j
-@Component
-public class AndroidSupplyTool implements ApplicationListener<ContextRefreshedEvent> {
+public class AndroidSupplyTool  {
     private static final File sasBinary = new File("plugins" + File.separator + "sonic-android-supply");
     private static final String sas = sasBinary.getAbsolutePath();
 
     private static final Map<String, Thread> perfmonThreads = new ConcurrentHashMap<>();
-    @Override
-    public void onApplicationEvent(@NonNull ContextRefreshedEvent event) {
-        log.info("Enable sonic-android-supply Module");
-    }
 
     public static void startShare(String udId, Session session) {
         executeShare(udId, session, PortTool.getPort());

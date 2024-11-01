@@ -20,7 +20,6 @@ package org.cloud.sonic.agent.tests.handlers;
 import com.alibaba.fastjson.JSON;
 import com.alibaba.fastjson.JSONArray;
 import com.alibaba.fastjson.JSONObject;
-import org.cloud.sonic.agent.bridge.ios.IOSDeviceThreadPool;
 import org.cloud.sonic.agent.bridge.ios.SibTool;
 import org.cloud.sonic.agent.common.enums.ConditionEnum;
 import org.cloud.sonic.agent.common.enums.SonicEnum;
@@ -29,15 +28,15 @@ import org.cloud.sonic.agent.common.interfaces.ResultDetailStatus;
 import org.cloud.sonic.agent.common.interfaces.StepType;
 import org.cloud.sonic.agent.common.maps.IOSProcessMap;
 import org.cloud.sonic.agent.common.models.HandleContext;
+import org.cloud.sonic.agent.components.SpringTool;
+import org.cloud.sonic.agent.components.UploadTools;
 import org.cloud.sonic.agent.tests.LogUtil;
 import org.cloud.sonic.agent.tests.RunStepThread;
 import org.cloud.sonic.agent.tests.script.GroovyScriptImpl;
 import org.cloud.sonic.agent.tests.script.PythonScriptImpl;
 import org.cloud.sonic.agent.tests.script.ScriptRunner;
 import org.cloud.sonic.agent.tools.PortTool;
-import org.cloud.sonic.agent.components.SpringTool;
 import org.cloud.sonic.agent.tools.file.DownloadTool;
-import org.cloud.sonic.agent.components.UploadTools;
 import org.cloud.sonic.driver.common.enums.PasteboardType;
 import org.cloud.sonic.driver.common.models.BaseElement;
 import org.cloud.sonic.driver.common.models.WindowSize;
@@ -64,7 +63,6 @@ import javax.imageio.stream.FileImageOutputStream;
 import java.io.File;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
-import java.util.concurrent.Future;
 
 import static org.testng.Assert.*;
 
@@ -1088,7 +1086,7 @@ public class IOSStepHandler {
         int finalSwipeEvent = swipeEvent;
         int finalSystemEvent = systemEvent;
         int finalNavEvent = navEvent;
-        Future<?> randomThread = IOSDeviceThreadPool.cachedThreadPool.submit(() -> {
+        var randomThread = Thread.startVirtualThread(() -> {
                     log.sendStepLog(StepType.INFO, "", "随机事件数：" + pctNum +
                             "<br>目标应用：" + packageName
                             + "<br>用户操作时延：" + finalSleepTime + " ms"
@@ -1142,11 +1140,11 @@ public class IOSStepHandler {
         );
 
         boolean finalIsOpenPackageListener = isOpenPackageListener;
-        Future<?> packageListener = IOSDeviceThreadPool.cachedThreadPool.submit(() -> {
+        var packageListener = Thread.startVirtualThread(() -> {
                     if (finalIsOpenPackageListener) {
-                        while (!randomThread.isDone()) {
+                        while (randomThread.isAlive()) {
                             int waitTime = 0;
-                            while (waitTime <= 10 && (!randomThread.isDone())) {
+                            while (waitTime <= 10 && (randomThread.isAlive())) {
                                 try {
                                     Thread.sleep(5000);
                                 } catch (InterruptedException e) {
@@ -1167,7 +1165,7 @@ public class IOSStepHandler {
         }
         log.sendStepLog(StepType.INFO, "", "测试目标包：" + packageName +
                 (isOpenPackageListener ? "<br>应用包名监听器已开启..." : ""));
-        while (!randomThread.isDone() || (!packageListener.isDone())) {
+        while (randomThread.isAlive() || (packageListener.isAlive())) {
         }
     }
 
@@ -1804,10 +1802,9 @@ public class IOSStepHandler {
             case "getElementAttr" ->
                     getElementAttr(handleContext, eleList.getJSONObject(0).getString("eleName"), eleList.getJSONObject(0).getString("eleType")
                             , eleList.getJSONObject(0).getString("eleValue"), step.getString("text"), step.getString("content"));
-            case "obtainElementAttr" ->
-                    obtainElementAttr(handleContext, eleList.getJSONObject(0).getString("eleName"),
-                            eleList.getJSONObject(0).getString("eleType"), eleList.getJSONObject(0).getString("eleValue"),
-                            step.getString("text"), step.getString("content"));
+            case "obtainElementAttr" -> obtainElementAttr(handleContext, eleList.getJSONObject(0).getString("eleName"),
+                    eleList.getJSONObject(0).getString("eleType"), eleList.getJSONObject(0).getString("eleValue"),
+                    step.getString("text"), step.getString("content"));
             case "logElementAttr" ->
                     logElementAttr(handleContext, eleList.getJSONObject(0).getString("eleName"), eleList.getJSONObject(0).getString("eleType")
                             , eleList.getJSONObject(0).getString("eleValue"), step.getString("text"));

@@ -1,27 +1,11 @@
-/*
- *   sonic-agent  Agent of Sonic Cloud Real Machine Platform.
- *   Copyright (C) 2022 SonicCloudOrg
- *
- *   This program is free software: you can redistribute it and/or modify
- *   it under the terms of the GNU Affero General Public License as published
- *   by the Free Software Foundation, either version 3 of the License, or
- *   (at your option) any later version.
- *
- *   This program is distributed in the hope that it will be useful,
- *   but WITHOUT ANY WARRANTY; without even the implied warranty of
- *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- *   GNU Affero General Public License for more details.
- *
- *   You should have received a copy of the GNU Affero General Public License
- *   along with this program.  If not, see <https://www.gnu.org/licenses/>.
- */
-package org.cloud.sonic.agent.components;
+package org.cloud.sonic.agent.runner;
 
+import jakarta.annotation.Resource;
 import org.cloud.sonic.agent.tools.BytesTool;
 import org.cloud.sonic.agent.tools.ProcessCommandTool;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.CommandLineRunner;
 import org.springframework.context.ConfigurableApplicationContext;
-import org.springframework.context.annotation.Bean;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
@@ -41,19 +25,15 @@ import java.util.Locale;
  * @date 2021/12/5 15:00
  */
 @Component
-public class EnvCheckTool {
+public class EnvCheckTool implements CommandLineRunner {
 
-    public static String system;
+    public static final String system = System.getProperty("os.name").toLowerCase();
     private final String HELP_URL = "https://sonic-cloud.cn/deploy/agent-deploy.html#%E5%B8%B8%E8%A7%81%E9%97%AE%E9%A2%98-q-a";
 
     public static String adbVersion = "unknown";
     public static String sasPrintVersion = "unknown";
     public static String sibPrintVersion = "unknown";
     public static String sgmPrintVersion = "unknown";
-
-    static {
-        system = System.getProperty("os.name").toLowerCase();
-    }
 
     @Value("${sonic.sas}")
     private String sasVersion;
@@ -64,27 +44,30 @@ public class EnvCheckTool {
     @Value("${sonic.sgm}")
     private String sgmVersion;
 
-    @Bean
-    public boolean checkEnv(ConfigurableApplicationContext context) {
+    @Resource
+    private ConfigurableApplicationContext context;
+
+    @Override
+    public void run(String... args) {
         System.out.println("===================== Checking the Environment =====================");
         try {
             checkConfigFiles();
             checkMiniFiles();
             checkPlugins();
+            System.out.println("=========================== Check results ===========================");
+            printAllPass("Congratulations, all check items have been done!");
+            System.out.println(this);
+            System.out.println("========================== Check Completed ==========================");
+
         } catch (Exception e) {
             System.out.println(printInfo(e.getMessage()));
             System.out.println("=========================== Check results ===========================");
             printAllFail("Unfortunately, some of the check items did not pass!");
             System.out.println(this);
             System.out.println("========================== Check Completed ==========================");
-            context.close();
-            System.exit(0);
+            throw new RuntimeException("Env Check Failed");
         }
-        System.out.println("=========================== Check results ===========================");
-        printAllPass("Congratulations, all check items have been done!");
-        System.out.println(this);
-        System.out.println("========================== Check Completed ==========================");
-        return true;
+
     }
 
     /**

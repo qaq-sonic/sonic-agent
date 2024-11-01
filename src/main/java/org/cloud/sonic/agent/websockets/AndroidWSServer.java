@@ -3,13 +3,13 @@ package org.cloud.sonic.agent.websockets;
 import com.alibaba.fastjson.JSON;
 import com.alibaba.fastjson.JSONObject;
 import com.android.ddmlib.*;
+import jakarta.annotation.Resource;
 import jakarta.websocket.*;
 import jakarta.websocket.server.PathParam;
 import jakarta.websocket.server.ServerEndpoint;
 import lombok.extern.slf4j.Slf4j;
 import org.cloud.sonic.agent.bridge.android.AndroidDeviceBridgeTool;
 import org.cloud.sonic.agent.bridge.android.AndroidDeviceLocalStatus;
-import org.cloud.sonic.agent.bridge.android.AndroidDeviceThreadPool;
 import org.cloud.sonic.agent.bridge.android.AndroidSupplyTool;
 import org.cloud.sonic.agent.common.config.WsEndpointConfigure;
 import org.cloud.sonic.agent.common.enums.AndroidKey;
@@ -53,6 +53,9 @@ public class AndroidWSServer {
     private String key;
     @Value("${server.port}")
     private int port;
+
+    @Resource
+    private AndroidDeviceBridgeTool androidDeviceBridgeTool;
 
     @OnOpen
     public void onOpen(Session session, @PathParam("key") String secretKey, @PathParam("udId") String udId, @PathParam("token") String token) throws Exception {
@@ -225,7 +228,7 @@ public class AndroidWSServer {
             case "debug" -> {
                 AndroidStepHandler androidStepHandler = HandlerMap.getAndroidMap().get(iDevice.getSerialNumber());
                 switch (msg.getString("detail")) {
-                    case "poco" -> AndroidDeviceThreadPool.cachedThreadPool.execute(() -> {
+                    case "poco" -> Thread.startVirtualThread(() -> {
                         androidStepHandler.startPocoDriver(new HandleContext(), msg.getString("engine"), msg.getInteger("port"));
                         JSONObject poco = new JSONObject();
                         try {
@@ -250,10 +253,10 @@ public class AndroidWSServer {
                     }
                     case "stopStep" ->
                             TaskManager.forceStopDebugStepThread(AndroidRunStepThread.ANDROID_RUN_STEP_TASK_PRE.formatted(0, msg.getInteger("caseId"), msg.getString("udId")));
-                    case "openApp" -> AndroidDeviceThreadPool.cachedThreadPool.execute(() -> {
+                    case "openApp" -> Thread.startVirtualThread(() -> {
                         AndroidDeviceBridgeTool.activateApp(iDevice, msg.getString("pkg"));
                     });
-                    case "killApp" -> AndroidDeviceThreadPool.cachedThreadPool.execute(() -> {
+                    case "killApp" -> Thread.startVirtualThread(() -> {
                         AndroidDeviceBridgeTool.forceStop(iDevice, msg.getString("pkg"));
                     });
                     case "tap" -> {
@@ -277,7 +280,7 @@ public class AndroidWSServer {
                         int y2 = Integer.parseInt(xy2.substring(xy2.indexOf(",") + 1));
                         AndroidDeviceBridgeTool.executeCommand(iDevice, "input swipe " + x1 + " " + y1 + " " + x2 + " " + y2 + " 200");
                     }
-                    case "install" -> AndroidDeviceThreadPool.cachedThreadPool.execute(() -> {
+                    case "install" -> Thread.startVirtualThread(() -> {
                         JSONObject result = new JSONObject();
                         result.put("msg", "installFinish");
                         try {
@@ -306,7 +309,7 @@ public class AndroidWSServer {
                     }
                     case "tree" -> {
                         if (androidStepHandler != null && androidStepHandler.getAndroidDriver() != null) {
-                            AndroidDeviceThreadPool.cachedThreadPool.execute(() -> {
+                            Thread.startVirtualThread(() -> {
                                 try {
                                     JSONObject result = new JSONObject();
                                     JSONObject settings = new JSONObject();
@@ -330,7 +333,7 @@ public class AndroidWSServer {
                     }
                     case "eleScreen" -> {
                         if (androidStepHandler != null && androidStepHandler.getAndroidDriver() != null) {
-                            AndroidDeviceThreadPool.cachedThreadPool.execute(() -> {
+                            Thread.startVirtualThread(() -> {
                                 JSONObject result = new JSONObject();
                                 result.put("msg", "eleScreen");
                                 try {
@@ -376,7 +379,7 @@ public class AndroidWSServer {
         AndroidStepHandler androidStepHandler = new AndroidStepHandler();
         androidStepHandler.setTestMode(0, 0, iDevice.getSerialNumber(), DeviceStatus.DEBUGGING, session.getUserProperties().get(UDID).toString());
         JSONObject result = new JSONObject();
-        AndroidDeviceThreadPool.cachedThreadPool.execute(() -> {
+        Thread.startVirtualThread(() -> {
             try {
                 AndroidDeviceLocalStatus.startDebug(iDevice.getSerialNumber());
                 int port = AndroidDeviceBridgeTool.startUiaServer(iDevice);

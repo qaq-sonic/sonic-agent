@@ -22,7 +22,6 @@ import com.alibaba.fastjson.JSONArray;
 import com.alibaba.fastjson.JSONObject;
 import com.android.ddmlib.IDevice;
 import org.cloud.sonic.agent.bridge.android.AndroidDeviceBridgeTool;
-import org.cloud.sonic.agent.bridge.android.AndroidDeviceThreadPool;
 import org.cloud.sonic.agent.common.enums.AndroidKey;
 import org.cloud.sonic.agent.common.enums.ConditionEnum;
 import org.cloud.sonic.agent.common.enums.SonicEnum;
@@ -33,6 +32,8 @@ import org.cloud.sonic.agent.common.maps.AndroidDeviceManagerMap;
 import org.cloud.sonic.agent.common.maps.AndroidThreadMap;
 import org.cloud.sonic.agent.common.maps.ChromeDriverMap;
 import org.cloud.sonic.agent.common.models.HandleContext;
+import org.cloud.sonic.agent.components.SpringTool;
+import org.cloud.sonic.agent.components.UploadTools;
 import org.cloud.sonic.agent.tests.LogUtil;
 import org.cloud.sonic.agent.tests.RunStepThread;
 import org.cloud.sonic.agent.tests.script.GroovyScriptImpl;
@@ -40,9 +41,7 @@ import org.cloud.sonic.agent.tests.script.PythonScriptImpl;
 import org.cloud.sonic.agent.tests.script.ScriptRunner;
 import org.cloud.sonic.agent.tools.BytesTool;
 import org.cloud.sonic.agent.tools.PortTool;
-import org.cloud.sonic.agent.components.SpringTool;
 import org.cloud.sonic.agent.tools.file.DownloadTool;
-import org.cloud.sonic.agent.components.UploadTools;
 import org.cloud.sonic.driver.android.AndroidDriver;
 import org.cloud.sonic.driver.android.enmus.AndroidSelector;
 import org.cloud.sonic.driver.android.service.AndroidElement;
@@ -72,7 +71,6 @@ import org.springframework.util.CollectionUtils;
 import javax.imageio.stream.FileImageOutputStream;
 import java.io.File;
 import java.util.*;
-import java.util.concurrent.Future;
 
 import static org.testng.Assert.*;
 
@@ -427,7 +425,7 @@ public class AndroidStepHandler {
             String getDetailCommandResult = AndroidDeviceBridgeTool.executeCommand(iDevice, dumpsysCommandStr);
             List<AndroidPermissionItem> allPermissionItems =
                     AndroidPermissionExtractor.extractPermissions(getDetailCommandResult,
-                    Arrays.asList("install", "runtime"), true);
+                            Arrays.asList("install", "runtime"), true);
             allPermissionItems.stream().filter(permissionItem -> !permissionItem.isGranted())
                     .forEach(permissionItem -> {
                         String curPermission = permissionItem.getPermission();
@@ -1441,7 +1439,7 @@ public class AndroidStepHandler {
         int finalSwipeEvent = swipeEvent;
         int finalSystemEvent = systemEvent;
         int finalNavEvent = navEvent;
-        Future<?> randomThread = AndroidDeviceThreadPool.cachedThreadPool.submit(() -> {
+        var randomThread = Thread.startVirtualThread(() -> {
                     log.sendStepLog(StepType.INFO, "", "随机事件数：" + pctNum +
                             "<br>目标应用：" + packageName
                             + "<br>用户操作时延：" + finalSleepTime + " ms"
@@ -1500,10 +1498,10 @@ public class AndroidStepHandler {
                 }
         );
         boolean finalIsOpenH5Listener = isOpenH5Listener;
-        Future<?> H5Listener = AndroidDeviceThreadPool.cachedThreadPool.submit(() -> {
+        var H5Listener = Thread.startVirtualThread(() -> {
                     if (finalIsOpenH5Listener) {
                         int h5Time = 0;
-                        while (!randomThread.isDone()) {
+                        while (randomThread.isAlive()) {
                             try {
                                 Thread.sleep(8000);
                             } catch (InterruptedException e) {
@@ -1527,11 +1525,11 @@ public class AndroidStepHandler {
                 }
         );
         boolean finalIsOpenPackageListener = isOpenPackageListener;
-        Future<?> packageListener = AndroidDeviceThreadPool.cachedThreadPool.submit(() -> {
+        var packageListener = Thread.startVirtualThread(() -> {
                     if (finalIsOpenPackageListener) {
-                        while (!randomThread.isDone()) {
+                        while (randomThread.isAlive()) {
                             int waitTime = 0;
-                            while (waitTime <= 10 && (!randomThread.isDone())) {
+                            while (waitTime <= 10 && (randomThread.isAlive())) {
                                 try {
                                     Thread.sleep(5000);
                                 } catch (InterruptedException e) {
@@ -1548,7 +1546,7 @@ public class AndroidStepHandler {
                 }
         );
         boolean finalIsOpenActivityListener = isOpenActivityListener;
-        Future<?> activityListener = AndroidDeviceThreadPool.cachedThreadPool.submit(() -> {
+        var activityListener = Thread.startVirtualThread(() -> {
                     if (finalIsOpenActivityListener) {
                         if (text.isEmpty()) {
                             return;
@@ -1557,7 +1555,7 @@ public class AndroidStepHandler {
                         for (JSONObject activities : text) {
                             blackList.add(activities.getString("name"));
                         }
-                        while (!randomThread.isDone()) {
+                        while (randomThread.isAlive()) {
                             try {
                                 Thread.sleep(8000);
                             } catch (InterruptedException e) {
@@ -1579,9 +1577,9 @@ public class AndroidStepHandler {
                 }
         );
         boolean finalIsOpenNetworkListener = isOpenNetworkListener;
-        Future<?> networkListener = AndroidDeviceThreadPool.cachedThreadPool.submit(() -> {
+        var networkListener = Thread.startVirtualThread(() -> {
                     if (finalIsOpenNetworkListener) {
-                        while (!randomThread.isDone()) {
+                        while (randomThread.isAlive()) {
                             try {
                                 Thread.sleep(8000);
                             } catch (InterruptedException e) {
@@ -1608,7 +1606,7 @@ public class AndroidStepHandler {
                 (isOpenH5Listener ? "<br>H5页面监听器已开启..." : "") +
                 (isOpenActivityListener ? "<br>黑名单Activity监听器..." : "") +
                 (isOpenNetworkListener ? "<br>网络状态监听器已开启..." : ""));
-        while (!randomThread.isDone() || (!packageListener.isDone()) || (!activityListener.isDone()) || (!networkListener.isDone()) || (!H5Listener.isDone())) {
+        while (randomThread.isAlive() || (packageListener.isAlive()) || (activityListener.isAlive()) || (networkListener.isAlive()) || (H5Listener.isAlive())) {
         }
     }
 
@@ -1852,7 +1850,7 @@ public class AndroidStepHandler {
     }
 
     public void obtainPocoElementAttr(HandleContext handleContext, String des, String selector, String pathValue,
-                                  String attr, String variable) {
+                                      String attr, String variable) {
         handleContext.setStepDes("获取控件 " + des + " 属性到变量");
         handleContext.setDetail("目标属性：" + attr + "，目标变量：" + variable);
         try {
@@ -2114,10 +2112,12 @@ public class AndroidStepHandler {
         switch (selector) {
             case "androidIterator" -> we = androidDriver.findElement(pathValue);
             case "id" -> we = androidDriver.findElement(AndroidSelector.Id, pathValue, retryTime);
-            case "accessibilityId" -> we = androidDriver.findElement(AndroidSelector.ACCESSIBILITY_ID, pathValue, retryTime);
+            case "accessibilityId" ->
+                    we = androidDriver.findElement(AndroidSelector.ACCESSIBILITY_ID, pathValue, retryTime);
             case "xpath" -> we = androidDriver.findElement(AndroidSelector.XPATH, pathValue, retryTime);
             case "className" -> we = androidDriver.findElement(AndroidSelector.CLASS_NAME, pathValue, retryTime);
-            case "androidUIAutomator" -> we = androidDriver.findElement(AndroidSelector.UIAUTOMATOR, pathValue, retryTime);
+            case "androidUIAutomator" ->
+                    we = androidDriver.findElement(AndroidSelector.UIAUTOMATOR, pathValue, retryTime);
             default ->
                     log.sendStepLog(StepType.ERROR, "查找控件元素失败", "这个控件元素类型: " + selector + " 不存在!!!");
         }
@@ -2509,10 +2509,9 @@ public class AndroidStepHandler {
             case "getElementAttr" ->
                     getElementAttr(handleContext, eleList.getJSONObject(0).getString("eleName"), eleList.getJSONObject(0).getString("eleType")
                             , eleList.getJSONObject(0).getString("eleValue"), step.getString("text"), step.getString("content"));
-            case "obtainElementAttr" ->
-                    obtainElementAttr(handleContext, eleList.getJSONObject(0).getString("eleName"),
-                            eleList.getJSONObject(0).getString("eleType"), eleList.getJSONObject(0).getString("eleValue"),
-                            step.getString("text"), step.getString("content"));
+            case "obtainElementAttr" -> obtainElementAttr(handleContext, eleList.getJSONObject(0).getString("eleName"),
+                    eleList.getJSONObject(0).getString("eleType"), eleList.getJSONObject(0).getString("eleValue"),
+                    step.getString("text"), step.getString("content"));
             case "logElementAttr" ->
                     logElementAttr(handleContext, eleList.getJSONObject(0).getString("eleName"), eleList.getJSONObject(0).getString("eleType")
                             , eleList.getJSONObject(0).getString("eleValue"), step.getString("text"));
@@ -2525,12 +2524,11 @@ public class AndroidStepHandler {
             case "isExistEle" ->
                     isExistEle(handleContext, eleList.getJSONObject(0).getString("eleName"), eleList.getJSONObject(0).getString("eleType")
                             , eleList.getJSONObject(0).getString("eleValue"), step.getBoolean("content"));
-            case "scrollToEle" ->
-                    scrollToEle(handleContext, eleList.getJSONObject(0).getString("eleName"),
-                            eleList.getJSONObject(0).getString("eleType"),
-                            eleList.getJSONObject(0).getString("eleValue"),
-                            step.getInteger("content"),
-                            step.getString("text"));
+            case "scrollToEle" -> scrollToEle(handleContext, eleList.getJSONObject(0).getString("eleName"),
+                    eleList.getJSONObject(0).getString("eleType"),
+                    eleList.getJSONObject(0).getString("eleValue"),
+                    step.getInteger("content"),
+                    step.getString("text"));
             case "isExistEleNum" -> isExistEleNum(handleContext, eleList.getJSONObject(0).getString("eleName"),
                     eleList.getJSONObject(0).getString("eleType"),
                     eleList.getJSONObject(0).getString("eleValue"),

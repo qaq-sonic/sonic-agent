@@ -72,8 +72,7 @@ public class TransportClient extends WebSocketClient {
         log.info("Agent <- Server message: {}", jsonObject);
         try {
             MsgType msgType = MsgType.valueOf(jsonObject.getString("msg"));
-
-            Thread.startVirtualThread(() -> handleIncomingMessage(msgType, jsonObject));
+            handleIncomingMessage(msgType, jsonObject);
         } catch (IllegalArgumentException e) {
             // Handle the case where msgTypeStr is not a valid MsgType
             log.error("Invalid message type: {}", jsonObject.getString("msg"));

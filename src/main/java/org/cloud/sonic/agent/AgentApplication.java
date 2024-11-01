@@ -1,13 +1,17 @@
 package org.cloud.sonic.agent;
 
+import com.alibaba.fastjson.JSONObject;
 import jakarta.annotation.PreDestroy;
 import lombok.extern.slf4j.Slf4j;
 import org.cloud.sonic.agent.common.maps.GlobalProcessMap;
 import org.cloud.sonic.agent.common.maps.IOSProcessMap;
 import org.cloud.sonic.agent.components.SGMTool;
 import org.cloud.sonic.agent.components.SpringTool;
+import org.cloud.sonic.agent.tools.NetworkInfo;
 import org.cloud.sonic.agent.tools.ScheduleTool;
-import org.cloud.sonic.agent.transport.TransportConnectionThread;
+import org.cloud.sonic.agent.transport.TransportClient;
+import org.cloud.sonic.agent.transport.TransportWorker;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
@@ -16,7 +20,9 @@ import org.springframework.context.annotation.Import;
 import org.springframework.context.event.EventListener;
 
 import java.io.File;
+import java.net.URI;
 import java.util.List;
+import java.util.concurrent.TimeUnit;
 
 
 @Slf4j
@@ -24,6 +30,13 @@ import java.util.List;
 @EnableAspectJAutoProxy(proxyTargetClass = true)
 @SpringBootApplication
 public class AgentApplication {
+    @Value("${sonic.server.wss}")
+    private String wss;
+    @Value("${spring.version}")
+    String version;
+    @Value("${server.port}")
+    Integer port;
+    private static final String host = NetworkInfo.getHostIP();
 
     public static void main(String[] args) {
         SpringApplication.run(AgentApplication.class, args);
@@ -35,12 +48,16 @@ public class AgentApplication {
         if (!testFile.exists()) {
             testFile.mkdirs();
         }
-        ScheduleTool.scheduleAtFixedRate(
-                new TransportConnectionThread(),
-                TransportConnectionThread.DELAY,
-                TransportConnectionThread.DELAY,
-                TransportConnectionThread.TIME_UNIT
-        );
+        ScheduleTool.scheduleAtFixedRate(() -> {
+            if (TransportWorker.getClient() == null) {
+                TransportClient transportClient = new TransportClient(URI.create(wss), host, version, port);
+                transportClient.connect();
+            } else {
+                JSONObject ping = new JSONObject();
+                ping.put("msg", "ping");
+                TransportWorker.send(ping);
+            }
+        }, 0, 10, TimeUnit.SECONDS);
         Thread.startVirtualThread(() -> {
             File file = new File("plugins/sonic-go-mitmproxy-ca-cert.pem");
             if (!file.exists()) {

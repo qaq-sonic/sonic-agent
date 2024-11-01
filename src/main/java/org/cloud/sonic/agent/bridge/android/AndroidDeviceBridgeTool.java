@@ -1,20 +1,3 @@
-/*
- *   sonic-agent  Agent of Sonic Cloud Real Machine Platform.
- *   Copyright (C) 2022 SonicCloudOrg
- *
- *   This program is free software: you can redistribute it and/or modify
- *   it under the terms of the GNU Affero General Public License as published
- *   by the Free Software Foundation, either version 3 of the License, or
- *   (at your option) any later version.
- *
- *   This program is distributed in the hope that it will be useful,
- *   but WITHOUT ANY WARRANTY; without even the implied warranty of
- *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- *   GNU Affero General Public License for more details.
- *
- *   You should have received a copy of the GNU Affero General Public License
- *   along with this program.  If not, see <https://www.gnu.org/licenses/>.
- */
 package org.cloud.sonic.agent.bridge.android;
 
 import com.alibaba.fastjson.JSONArray;
@@ -22,24 +5,21 @@ import com.alibaba.fastjson.JSONObject;
 import com.android.ddmlib.*;
 import lombok.extern.slf4j.Slf4j;
 import org.cloud.sonic.agent.common.enums.AndroidKey;
-import org.cloud.sonic.agent.common.maps.AndroidThreadMap;
-import org.cloud.sonic.agent.common.maps.AndroidWebViewMap;
-import org.cloud.sonic.agent.common.maps.ChromeDriverMap;
-import org.cloud.sonic.agent.common.maps.GlobalProcessMap;
+import org.cloud.sonic.agent.common.interfaces.IsHMStatus;
+import org.cloud.sonic.agent.common.interfaces.PlatformType;
+import org.cloud.sonic.agent.common.maps.*;
+import org.cloud.sonic.agent.components.UploadTools;
 import org.cloud.sonic.agent.tests.android.AndroidBatteryThread;
 import org.cloud.sonic.agent.tools.BytesTool;
 import org.cloud.sonic.agent.tools.PortTool;
 import org.cloud.sonic.agent.tools.ScheduleTool;
 import org.cloud.sonic.agent.tools.file.DownloadTool;
 import org.cloud.sonic.agent.tools.file.FileTool;
-import org.cloud.sonic.agent.components.UploadTools;
+import org.cloud.sonic.agent.transport.TransportWorker;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.ApplicationListener;
-import org.springframework.context.annotation.DependsOn;
 import org.springframework.context.event.ContextRefreshedEvent;
-import org.springframework.core.Ordered;
-import org.springframework.core.annotation.Order;
 import org.springframework.http.*;
 import org.springframework.lang.NonNull;
 import org.springframework.stereotype.Component;
@@ -60,10 +40,9 @@ import java.util.stream.Collectors;
  * @des ADB工具类
  * @date 2021/08/16 19:26
  */
-@DependsOn({"androidThreadPoolInit"})
-@Component
+
 @Slf4j
-@Order(value = Ordered.HIGHEST_PRECEDENCE)
+@Component
 public class AndroidDeviceBridgeTool implements ApplicationListener<ContextRefreshedEvent> {
     public static AndroidDebugBridge androidDebugBridge = null;
     private static String uiaApkVersion;
@@ -78,10 +57,6 @@ public class AndroidDeviceBridgeTool implements ApplicationListener<ContextRefre
 
     @Autowired
     private RestTemplate restTemplateBean;
-
-    @Autowired
-    private AndroidDeviceStatusListener androidDeviceStatusListener;
-
 
     @Override
     public void onApplicationEvent(@NonNull ContextRefreshedEvent event) {
@@ -118,7 +93,7 @@ public class AndroidDeviceBridgeTool implements ApplicationListener<ContextRefre
         //获取系统SDK路径
         String systemADBPath = getADBPathFromSystemEnv();
         //添加设备上下线监听
-        AndroidDebugBridge.addDeviceChangeListener(androidDeviceStatusListener);
+        AndroidDebugBridge.addDeviceChangeListener(new AndroidDeviceStatusListener());
         try {
             AndroidDebugBridge.init(false);
             //开始创建ADB
@@ -1004,5 +979,62 @@ public class AndroidDeviceBridgeTool implements ApplicationListener<ContextRefre
             AndroidWebViewMap.getMap().put(iDevice, has);
         }
         return result;
+    }
+
+    public class AndroidDeviceStatusListener implements AndroidDebugBridge.IDeviceChangeListener {
+
+        /**
+         * @param device
+         * @return void
+         * @author ZhouYiXun
+         * @des 发送设备状态
+         * @date 2021/8/16 19:58
+         */
+        private void send(IDevice device) {
+            JSONObject deviceDetail = new JSONObject();
+            deviceDetail.put("msg", "deviceDetail");
+            deviceDetail.put("udId", device.getSerialNumber());
+            deviceDetail.put("name", device.getProperty("ro.product.name"));
+            deviceDetail.put("model", device.getProperty(IDevice.PROP_DEVICE_MODEL));
+            deviceDetail.put("status", device.getState() == null ? null : device.getState().toString());
+            deviceDetail.put("platform", PlatformType.ANDROID);
+            if (device.getProperty("ro.config.ringtone") != null && device.getProperty("ro.config.ringtone").contains("Harmony")) {
+                deviceDetail.put("version", device.getProperty("hw_sc.build.platform.version"));
+                deviceDetail.put("isHm", IsHMStatus.IS_HM);
+            } else {
+                deviceDetail.put("version", device.getProperty(IDevice.PROP_BUILD_VERSION));
+                deviceDetail.put("isHm", IsHMStatus.IS_ANDROID);
+            }
+
+            deviceDetail.put("size", AndroidDeviceBridgeTool.getScreenSize(device));
+            deviceDetail.put("cpu", device.getProperty(IDevice.PROP_DEVICE_CPU_ABI));
+            deviceDetail.put("manufacturer", device.getProperty(IDevice.PROP_DEVICE_MANUFACTURER));
+            TransportWorker.send(deviceDetail);
+        }
+
+        @Override
+        public void deviceConnected(IDevice device) {
+            log.info("Android device: {} ONLINE！", device.getSerialNumber());
+            AndroidDeviceManagerMap.getStatusMap().remove(device.getSerialNumber());
+            DevicesBatteryMap.getTempMap().remove(device.getSerialNumber());
+            send(device);
+        }
+
+        @Override
+        public void deviceDisconnected(IDevice device) {
+            log.info("Android device: {} OFFLINE！", device.getSerialNumber());
+            AndroidDeviceManagerMap.getStatusMap().remove(device.getSerialNumber());
+            DevicesBatteryMap.getTempMap().remove(device.getSerialNumber());
+            send(device);
+        }
+
+        @Override
+        public void deviceChanged(IDevice device, int changeMask) {
+            IDevice.DeviceState state = device.getState();
+            if (state == IDevice.DeviceState.OFFLINE) {
+                return;
+            }
+            send(device);
+        }
     }
 }

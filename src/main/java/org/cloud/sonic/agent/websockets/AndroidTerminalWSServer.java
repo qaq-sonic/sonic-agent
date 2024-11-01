@@ -9,7 +9,6 @@ import jakarta.websocket.server.PathParam;
 import jakarta.websocket.server.ServerEndpoint;
 import lombok.extern.slf4j.Slf4j;
 import org.cloud.sonic.agent.bridge.android.AndroidDeviceBridgeTool;
-import org.cloud.sonic.agent.bridge.android.AndroidDeviceThreadPool;
 import org.cloud.sonic.agent.common.config.WsEndpointConfigure;
 import org.cloud.sonic.agent.common.maps.AndroidAPKMap;
 import org.cloud.sonic.agent.enums.AndroidTerminalMsgType;
@@ -167,7 +166,7 @@ public class AndroidTerminalWSServer {
             return;
         }
         var iDevice = (IDevice) session.getUserProperties().get(DEVICE);
-        var ter = AndroidDeviceThreadPool.cachedThreadPool.submit(() -> {
+        var ter = Thread.startVirtualThread(() -> {
             try {
                 iDevice.executeShellCommand(command, new IShellOutputReceiver() {
                     @Override
@@ -199,28 +198,20 @@ public class AndroidTerminalWSServer {
     }
 
     private void handleStopLogcat(Session session, JSONObject jsonObject) {
-        var logcat = (Future<?>) session.getUserProperties().get(LOGCAT_FUTURE);
-        if (logcat != null && !logcat.isDone() && !logcat.isCancelled()) {
-            try {
-                logcat.cancel(true);
-            } catch (Exception e) {
-                log.error(e.getMessage());
-            }
+        var logcat = (Thread) session.getUserProperties().get(LOGCAT_FUTURE);
+        if (logcat != null && logcat.isAlive()) {
+            logcat.interrupt();
         }
     }
 
     private void handleLogcat(Session session, JSONObject jsonObject) {
-        var logcat = (Future<?>) session.getUserProperties().get(LOGCAT_FUTURE);
-        if (logcat != null && !logcat.isDone() && !logcat.isCancelled()) {
-            try {
-                logcat.cancel(true);
-            } catch (Exception e) {
-                log.error(e.getMessage());
-            }
+        var logcat = (Thread) session.getUserProperties().get(LOGCAT_FUTURE);
+        if (logcat != null && logcat.isAlive()) {
+            logcat.interrupt();
         }
         var iDevice = (IDevice) session.getUserProperties().get(DEVICE);
         var command = "logcat *:" + jsonObject.getString("level") + (jsonObject.getString("filter").isEmpty() ? "" : " | grep " + jsonObject.getString("filter"));
-        logcat = AndroidDeviceThreadPool.cachedThreadPool.submit(() -> {
+        logcat = Thread.startVirtualThread(() -> {
             try {
                 iDevice.executeShellCommand(command, new IShellOutputReceiver() {
                     @Override
@@ -249,15 +240,15 @@ public class AndroidTerminalWSServer {
     }
 
     private void exit(Session session) {
-        var ter = (Future<?>) session.getUserProperties().get(TERMINAL_FUTURE);
-        if (ter != null && !ter.isDone() && !ter.isCancelled()) {
-            ter.cancel(true);
+        var ter = (Thread) session.getUserProperties().get(TERMINAL_FUTURE);
+        if (ter != null && ter.isAlive()) {
+            ter.interrupt();
         }
         stopService(session);
 
-        var logcat = (Future<?>) session.getUserProperties().get(LOGCAT_FUTURE);
-        if (logcat != null && !logcat.isDone() && !logcat.isCancelled()) {
-            logcat.cancel(true);
+        var logcat = (Thread) session.getUserProperties().get(LOGCAT_FUTURE);
+        if (logcat != null && logcat.isAlive()) {
+            logcat.interrupt();
         }
         try {
             session.close();

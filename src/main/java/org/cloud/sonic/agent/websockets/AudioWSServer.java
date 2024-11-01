@@ -33,7 +33,7 @@ public class AudioWSServer {
 
     @Value("${sonic.agent.key}")
     private String key;
-    private Map<Session, Thread> audioMap = new ConcurrentHashMap<>();
+    private static final Map<Session, Thread> audioMap = new ConcurrentHashMap<>();
 
     @OnOpen
     public void onOpen(Session session, @PathParam("key") String secretKey, @PathParam("udId") String udId) throws Exception {

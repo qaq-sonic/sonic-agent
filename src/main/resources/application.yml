@@ -1,5 +1,8 @@
 spring:
   version: @project.version@
+  threads:
+    virtual:
+      enabled: true
 
 server:
   port: ${AGENT_PORT:8443}

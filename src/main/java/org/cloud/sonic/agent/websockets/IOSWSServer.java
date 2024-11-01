@@ -24,7 +24,6 @@ import jakarta.websocket.server.PathParam;
 import jakarta.websocket.server.ServerEndpoint;
 import lombok.extern.slf4j.Slf4j;
 import org.cloud.sonic.agent.bridge.ios.IOSDeviceLocalStatus;
-import org.cloud.sonic.agent.bridge.ios.IOSDeviceThreadPool;
 import org.cloud.sonic.agent.bridge.ios.SibTool;
 import org.cloud.sonic.agent.common.config.WsEndpointConfigure;
 import org.cloud.sonic.agent.common.interfaces.DeviceStatus;
@@ -118,7 +117,7 @@ public class IOSWSServer {
             SibTool.orientationWatcher(udId, session);
         }
 
-        IOSDeviceThreadPool.cachedThreadPool.execute(() -> {
+        Thread.startVirtualThread(() -> {
             IOSStepHandler iosStepHandler = new IOSStepHandler();
             iosStepHandler.setTestMode(0, 0, udId, DeviceStatus.DEBUGGING, session.getUserProperties().get("id").toString());
             JSONObject result = new JSONObject();
@@ -173,7 +172,7 @@ public class IOSWSServer {
         JSONObject msg = JSON.parseObject(message);
         var udId = (String) session.getUserProperties().get(UDID);
         log.info("{} send: {}", udId, msg);
-        IOSDeviceThreadPool.cachedThreadPool.execute(() -> {
+        Thread.startVirtualThread(() -> {
             IOSDriver iosDriver = null;
             IOSStepHandler iosStepHandler = HandlerMap.getIOSMap().get(udId);
             if (iosStepHandler != null && iosStepHandler.getIOSDriver() != null) {
@@ -299,7 +298,7 @@ public class IOSWSServer {
                 case "uninstallApp" -> SibTool.uninstall(udId, msg.getString("detail"));
                 case "debug" -> {
                     switch (msg.getString("detail")) {
-                        case "poco" -> IOSDeviceThreadPool.cachedThreadPool.execute(() -> {
+                        case "poco" -> Thread.startVirtualThread(() -> {
                             iosStepHandler.startPocoDriver(new HandleContext(), msg.getString("engine"), msg.getInteger("port"));
                             JSONObject poco = new JSONObject();
                             try {
